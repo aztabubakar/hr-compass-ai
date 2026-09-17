@@ -168,3 +168,100 @@ recording; and deciding the Phase 4 items flagged in
 design-and-evaluation.md Section 10 (deployment to Render, any additional
 LLM provider, authentication/multi-tenancy if ever needed beyond a course
 demo).
+
+### Phase 4 — evaluation harness, CI/CD, deployment configuration
+
+Delegated to Claude Code: designing and authoring a 25-case structured
+evaluation set (`evaluation/cases.json`) spanning 15 categories (simple
+and multi-document policy questions, employee-data lookups, PTO and
+interstate/international remote-work workflows, benefits, expense
+compliance, ambiguous requests, missing/invalid employee IDs,
+out-of-scope questions, sensitive escalation, action-confirmation safety,
+and tool-failure/incomplete-evidence cases), grounding every case's
+expected tools, expected policy documents, and rubric keywords in the
+actual dataset and policy corpus content (verified by directly querying
+`mcp_server.dataset`/`mcp_server.compliance` for ground truth before
+writing each case, rather than guessing); a deterministic
+`FakeLLMProvider`-scripted offline evaluation harness
+(`evaluation/scripts.py`, `evaluation/evaluator.py`,
+`evaluation/run_offline.py`) that runs every case through the real agent
+orchestrator, MCP server, and RAG retrieval; a rule-based metrics module
+(`evaluation/metrics.py`) computing groundedness (keyword-coverage
+proxy), citation accuracy/completeness, tool-selection accuracy, workflow
+completion, clarification/escalation accuracy, action-safety pass rate,
+and p50/p95 latency; a live-model evaluation runner
+(`evaluation/run_live.py`) that exercises the same 25 cases against a
+real, independently-deciding Groq model; a RAG top_k=3-vs-5 retrieval
+ablation (`evaluation/ablation.py`); GitHub Actions CI
+(`.github/workflows/ci.yml`) covering dependency install, an import/build
+check, the full test suite, an MCP discovery/tool-call smoke test
+(`scripts/mcp_smoke_test.py`), a FastAPI app-start smoke test
+(`scripts/app_smoke_test.py`), and a deterministic evaluation smoke test
+— all offline, no API key; a test-gated deploy job that only triggers a
+Render deploy hook after the test job succeeds; Render deployment
+configuration (`render.yaml`) with a build-time RAG index strategy; a
+hardened, nested `/health` response shape (`app/models.py`,
+`app/main.py`); and a standalone deployment smoke test script
+(`scripts/deployment_smoke_test.py`) using only the standard library.
+
+What worked well: reusing the exact `FakeLLMProvider`-scripting pattern
+from Phase 3's agent tests for the offline evaluation harness meant the
+harness exercises the *real* orchestrator/MCP/RAG stack end to end
+(confirmed by an actual full run: 25/25 cases, 0 errors, on the first
+successful execution after fixing two unrelated import errors — see
+below); the confirmation-gate safety check
+(`ticket_downgraded_without_prior_confirmation` in
+`evaluation/metrics.py`) directly reuses the same code-level gate proven
+in Phase 3's tests, giving a second, independent measurement of the same
+safety property; and the top_k ablation produced a genuine, non-trivial
+result (doc hit rate 0.79 -> 0.86, doc recall 0.71 -> 0.86 moving from
+top_k=3 to top_k=5 on 14 representative queries) that confirms, rather
+than merely asserts, that `rag/config.py`'s existing `top_k=5` default
+was the right choice.
+
+What required a fix or human-equivalent review during this session: a
+real, if minor, mistake — `scripts/mcp_smoke_test.py` already existed
+from Phase 2 (a simple, unvalidated print-only script) and was
+overwritten with a new, stricter, self-contained, exit-code-asserting
+version without first reading the original file, which is a violation of
+this project's own "read before write" discipline; the new version is a
+legitimate improvement for the Phase 4 requirement (a CI step that must
+actually fail on a real problem, which the original print-only script
+could not do), so it was kept, but README.md's documentation of that
+script's usage and example output had to be rewritten to match the new
+behavior rather than silently left describing the old one. Two ordinary
+import-path mistakes were caught immediately by running each new script
+locally before wiring it into CI: `evaluation/ablation.py` first imported
+a `Retriever` class that doesn't exist (the real name is
+`rag.retrieval.PolicyRetriever`), and `evaluation/run_offline.py`'s first
+version built its scratch RAG index inside `evaluation/results/` (risking
+an accidental commit of a large binary build artifact) before being
+changed to use `tempfile.TemporaryDirectory`. The `/health` endpoint's
+response shape was changed from three flat string fields
+(`status`/`mcp`/`rag`/`llm_configured`) to a nested structure per the
+Phase 4 spec's exact example; this is a breaking API change, called out
+explicitly here rather than silently — `tests/test_api.py` and
+`app/static/index.html`'s status-dot JavaScript were both updated to
+match, and a new test (`test_health_reports_degraded_when_mcp_unavailable`)
+was added to prove the new `status: "degraded"` behavior, not just the
+happy path.
+
+**No live Groq evaluation and no actual Render deployment were performed
+in this phase: neither a `GROQ_API_KEY` nor a Render account was available
+in this development environment.** `evaluation/run_live.py` was written
+and exercised only for its no-key clean-exit path; `evaluation/README.md`'s
+live-model validation checklist and `deployed.md` were both filled in with
+explicit placeholders and instructions rather than any invented result or
+URL. This is stated plainly, matching the same rule this project has
+followed since Phase 3: do not claim verification, live-model validation,
+or a live deployment that did not actually happen.
+
+Retained by the student: obtaining a `GROQ_API_KEY` and a Render account
+to actually run `evaluation/run_live.py`, complete
+`evaluation/README.md`'s live-model validation checklist, and deploy via
+`render.yaml`; the one-time Render dashboard step (turning off
+Auto-Deploy) and GitHub secret (`RENDER_DEPLOY_HOOK_URL`) needed for the
+CI `deploy` job's gating to actually take effect, since neither can be
+done from within this repository's code; filling in `deployed.md`'s
+placeholders once deployed; and recording the required 7-10 minute demo
+video against the real deployed system.

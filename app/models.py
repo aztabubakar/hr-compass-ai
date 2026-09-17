@@ -15,11 +15,29 @@ class ChatResponse(AgentResponse):
     conversation_id: str
 
 
+class RagHealth(BaseModel):
+    ready: bool
+
+
+class McpHealth(BaseModel):
+    ready: bool
+    tools_discovered: int | None = None
+
+
+class LlmHealth(BaseModel):
+    configured: bool
+    provider: str
+
+
 class HealthResponse(BaseModel):
-    status: str
-    mcp: str
-    rag: str
-    llm_configured: bool
+    """Never include API keys, secrets, or other sensitive environment data
+    here -- only readiness booleans and non-sensitive configuration (e.g.
+    which provider *name* is selected, never a key)."""
+
+    status: str  # "ok" if every important dependency is ready, else "degraded"
+    rag: RagHealth
+    mcp: McpHealth
+    llm: LlmHealth
 
 
 class ToolInfo(BaseModel):

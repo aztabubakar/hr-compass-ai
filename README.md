@@ -3,17 +3,24 @@
 An agentic HR assistant for a fictional company, **Solara Dynamics, Inc.**,
 built for the Quantic **AI Engineering Techniques and Architectures**
 project. See `PROJECT_SPEC.md` for the authoritative assignment
-requirements and `docs/architecture.md` for the target system design.
+requirements and `docs/architecture.md` for the system architecture
+diagram (Mermaid + text) and component overview.
 
-**Project status: Phase 3 — LLM agent + web app.** Phase 1 delivered the
-policy corpus, synthetic HR datasets, and RAG pipeline. Phase 2 added a real
-MCP server (8 tools) and MCP client. Phase 3 adds a real LLM-driven agent
-(Groq by default) that dynamically discovers and calls those MCP tools —
-choosing which ones and in what order itself, not from a hard-coded
-sequence — plus a FastAPI web app (`/health`, `/chat`, `/api/tools`) and a
-browser chat UI. CI/CD, free-tier deployment, and the evaluation harness are
-**not yet implemented** — see "Remaining work" below and
-`design-and-evaluation.md` for the full plan.
+**Project status: Phase 4 — evaluation, CI/CD, deployment configuration.**
+Phase 1 delivered the policy corpus, synthetic HR datasets, and RAG
+pipeline. Phase 2 added a real MCP server (8 tools) and MCP client. Phase 3
+added a real LLM-driven agent (Groq by default) that dynamically discovers
+and calls those MCP tools — choosing which ones and in what order itself,
+not from a hard-coded sequence — plus a FastAPI web app (`/health`,
+`/chat`, `/api/tools`) and a browser chat UI. Phase 4 added a 25-case
+evaluation harness (deterministic + live modes, a RAG top-k ablation),
+GitHub Actions CI (tests, MCP/app smoke tests, deterministic evaluation,
+test-gated deployment trigger), and Render deployment configuration.
+**All of that is complete in code and tests; actually deploying to Render
+and running the live-model evaluation both require resources (a Render
+account, a `GROQ_API_KEY`) not available in this development
+environment** — see `deployed.md` and `design-and-evaluation.md` section
+12 ("Remaining Work") for the precise, honest list of what's left.
 
 ## The company
 
@@ -43,11 +50,12 @@ mcp_client/        Async MCP client (Phase 2)
 llm/               Provider-agnostic LLM abstraction (Groq default, FakeLLMProvider for tests) (Phase 3)
 agent/             LLM agent orchestrator: bounded tool-calling loop, prompts, structured output (Phase 3)
 app/               FastAPI web app (/health, /chat, /api/tools) + browser chat UI (Phase 3)
-scripts/           Deterministic tool-level demo workflows, MCP/agent smoke tests (Phase 2/3)
+scripts/           Deterministic demo workflows + MCP/app/agent/deployment smoke tests (Phase 2/3/4)
 mcp/               MCP docs pointer only — see mcp/README.md for why the code lives in mcp_server/mcp_client
-evaluation/        Evaluation harness and cases (Phase 4, not yet implemented)
+evaluation/        25-case evaluation harness: cases, metrics, offline/live runners, ablation (Phase 4)
 tests/             Automated tests (pytest)
-docs/              Architecture and acceptance-checklist reference docs
+docs/              Architecture diagram and acceptance-checklist reference docs
+.github/workflows/ GitHub Actions CI: tests, smoke tests, deterministic evaluation, deploy gate (Phase 4)
 ```
 
 ## Setup
@@ -144,29 +152,27 @@ not run interactively. `Ctrl+C` to stop it.
 python -m scripts.mcp_smoke_test
 ```
 
-This launches the server as a subprocess, lists all 8 discovered tools
-with their input schemas, and makes one real tool call
-(`lookup_employee_profile`), printing everything. Example output:
+Builds its own hermetic RAG index (hashing backend, to a temp directory)
+so it needs no prior setup, launches the server as a subprocess, discovers
+all 8 tools, calls one RAG-backed tool (`search_policy_documents`) and one
+structured-data tool (`lookup_employee_profile`), and confirms an unknown
+employee ID raises a clean tool-level error rather than crashing. Prints a
+PASS/FAIL-style trace and exits non-zero on any failure, which is what
+lets `.github/workflows/ci.yml` use it as a real CI gate, not just a
+manual print. Example output:
 
 ```
-Discovered 8 tools:
+Building a hermetic RAG index (hashing backend) at /tmp/hr_compass_mcp_smoke_xxxx ...
+Connected to MCP server. Discovering tools ...
+OK: discovered 8 tools, including all 8 required ones.
+Calling a RAG-backed tool: search_policy_documents ...
+OK: 3 result(s) returned.
+Calling a structured-data-backed tool: lookup_employee_profile ...
+OK: looked up Jordan Vance.
+Confirming a clean tool-level error for an unknown employee ID ...
+OK: unknown employee ID raised a clean MCPToolError, not a crash.
 
-- search_policy_documents: Search the Solara Dynamics policy corpus and return ranked, citable evidence...
-    input_schema: {"properties": {"query": {...}, "top_k": {...}, "document_id": {...}}, ...}
-- get_policy_section: ...
-- lookup_employee_profile: ...
-- check_pto_balance: ...
-- lookup_benefits_status: ...
-- check_policy_compliance: ...
-- draft_hr_email: ...
-- create_mock_hr_ticket: ...
-
-Calling lookup_employee_profile(employee_id='EMP-1001')...
-{
-  "employee_id": "EMP-1001",
-  "full_name": "Jordan Vance",
-  ...
-}
+MCP discovery/tool-call smoke test PASSED.
 ```
 
 ### Example: calling a tool from your own code
@@ -185,9 +191,10 @@ anyio.run(main)
 ```
 
 `MCPClient` launches the server subprocess itself (no separate process to
-start first) and inherits your shell's environment by default, so
-`EMBEDDING_BACKEND=hashing python -m scripts.mcp_smoke_test` works exactly
-as you'd expect.
+start first) and inherits your shell's environment by default, so setting
+`EMBEDDING_BACKEND`/`RAG_INDEX_DIR` before running your own script works
+exactly as you'd expect (`scripts/mcp_smoke_test.py` above builds and
+points at its own temp index instead, so it needs no such setup).
 
 ### Run the two deterministic demo workflows
 
@@ -259,33 +266,27 @@ Try these in the chat UI (also listed there as clickable examples):
 - *"What is the company's stock option vesting schedule?"* — out-of-corpus; the agent says so rather than guessing.
 - *"I want to report harassment by a coworker."* — sensitive issue; grounded reporting guidance, offers (does not create) a mock HR case.
 
-## Manual smoke tests (not part of the automated suite)
+## Smoke tests
 
 ```bash
-python -m scripts.mcp_smoke_test      # MCP discovery + one real tool call over stdio
-python -m scripts.agent_smoke_test    # live agent test: real Groq call, needs GROQ_API_KEY
+python -m scripts.mcp_smoke_test          # MCP discovery + tool calls (CI-safe, no API key)
+python -m scripts.app_smoke_test          # FastAPI app-start + /health, /api/tools, / (CI-safe, no API key)
+python -m scripts.agent_smoke_test        # live agent test: real Groq call, needs GROQ_API_KEY
+python -m scripts.deployment_smoke_test <url>   # smoke test an already-deployed URL, e.g. on Render
 ```
 
-`agent_smoke_test` prints setup guidance and exits cleanly (code 0) if
-`GROQ_API_KEY` isn't set, rather than failing — it's meant for a human to
-run locally to sanity-check the live path, and is never run in CI.
-`mcp_smoke_test` needs no API key; example output:
-
-```
-Discovered 8 tools:
-
-- search_policy_documents: Search the Solara Dynamics policy corpus and return ranked, citable evidence...
-    input_schema: {"properties": {"query": {...}, "top_k": {...}, "document_id": {...}}, ...}
-- get_policy_section: ...
-...
-
-Calling lookup_employee_profile(employee_id='EMP-1001')...
-{
-  "employee_id": "EMP-1001",
-  "full_name": "Jordan Vance",
-  ...
-}
-```
+`scripts/mcp_smoke_test.py` and `scripts/app_smoke_test.py` are what
+`.github/workflows/ci.yml` runs on every push/PR — each builds its own
+hermetic hashing-backend RAG index, needs no `GROQ_API_KEY`, and exits
+non-zero on failure so CI can gate on them. `scripts/agent_smoke_test.py`
+is the only one of the four that makes a real Groq call: it prints setup
+guidance and exits cleanly (code 0) if `GROQ_API_KEY` isn't set rather
+than failing, is meant for a human to run locally to sanity-check the
+live path, and is **never** run in CI. `scripts/deployment_smoke_test.py`
+takes a base URL (see "Deploying to Render" below) and checks `/`,
+`/health`, and `/api/tools`; pass `--test-chat` to also exercise `POST
+/chat`, gated on that deployment's own `/health` reporting
+`llm.configured: true`.
 
 ## Running tests
 
@@ -293,13 +294,16 @@ Calling lookup_employee_profile(employee_id='EMP-1001')...
 pytest
 ```
 
-131 tests: 38 from Phase 1 (policy parsing, chunking, vector store,
+145 tests: 38 from Phase 1 (policy parsing, chunking, vector store,
 retrieval, HR data integrity), 65 from Phase 2 (44 covering the MCP server/
 client/all 8 tools/both demo workflows through the real protocol, plus 21
 new compliance-engine boundary regression tests — see "Exact calendar-day
-compliance fix" in `design-and-evaluation.md`), and 28 from Phase 3 (17
+compliance fix" in `design-and-evaluation.md`), 28 from Phase 3 (17
 agent-orchestration tests proving genuine model-driven tool selection for
-every required behavior, plus 11 FastAPI endpoint tests).
+every required behavior, plus 11 FastAPI endpoint tests), and 14 from
+Phase 4 (13 covering the evaluation harness itself — case loading, scoring
+rules, and a handful of cases run through the real orchestrator/MCP layer
+— plus 1 new `/health` degraded-status test).
 
 The suite is fully offline and deterministic: it builds a real index over
 the actual Solara Dynamics corpus once per session using the hashing
@@ -335,16 +339,76 @@ prompts" above):
 See `design-and-evaluation.md` for the full roster and the policy
 thresholds these scenarios are designed to exercise.
 
-## Remaining work (Phase 4+)
+## Evaluation
 
-Not yet implemented, per `PROJECT_SPEC.md`: CI/CD (GitHub Actions —
-dependency install, import/build check, tests, MCP discovery/tool-call
-test, gating deployment), free-tier deployment (Render or equivalent;
-`deployed.md` will be filled in once live), and the 20-30 case evaluation
-harness with groundedness/citation/tool-selection/workflow-completion/
-clarification-escalation/action-safety/p50-p95-latency metrics and at
-least one ablation. See `design-and-evaluation.md` "Remaining Work" for the
-detailed plan.
+```bash
+python -m evaluation.run_offline          # deterministic, offline, CI-safe (25 cases)
+python -m evaluation.run_offline --max-cases 5   # fast subset
+python -m evaluation.run_live             # real Groq model, requires GROQ_API_KEY (never run in CI)
+python -m evaluation.ablation             # RAG retrieval ablation: top_k=3 vs top_k=5
+```
+
+25 structured cases (`evaluation/cases.json`) across 15 categories
+(straightforward/multi-document/employee-data policy questions, PTO and
+remote-work workflows, benefits, expense compliance, ambiguous requests,
+missing/invalid employee IDs, out-of-scope questions, sensitive
+escalation, action-confirmation safety, and tool-failure/incomplete-
+evidence cases), scored for groundedness, citation accuracy/completeness,
+tool-selection accuracy, workflow completion, clarification/escalation
+accuracy, action-safety pass rate, and p50/p95 latency. **`run_offline`
+proves the agent/MCP/safety architecture works — it does not measure real
+LLM quality, since its "model" is a scripted `FakeLLMProvider`; only
+`run_live` (not run in this development environment — no `GROQ_API_KEY`
+was available) measures that.** Full methodology, metrics definitions,
+documented limitations, and a manual live-model validation checklist are
+in `evaluation/README.md`; results and analysis are in
+`design-and-evaluation.md` section 10.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push/PR: installs dependencies,
+an import/build check, the full `pytest` suite, `scripts/mcp_smoke_test.py`,
+`scripts/app_smoke_test.py`, `evaluation.run_offline`, and
+`evaluation.ablation` — all offline, no `GROQ_API_KEY` or other external
+service required. A second `deploy` job triggers a Render deploy hook only
+after the test job succeeds and only on a push to `main`, so deployment is
+genuinely gated on tests passing once the one-time setup in the job's
+comments (turning off Render's own Auto-Deploy, setting the
+`RENDER_DEPLOY_HOOK_URL` secret) is done — see `design-and-evaluation.md`
+section 9.3 for the full explanation of why that setup step is required
+for the gating claim to be true.
+
+## Deploying to Render
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port $PORT   # the production start command
+```
+
+`render.yaml` defines a single free-tier Render "web" service running the
+whole app (FastAPI + agent + MCP client/server subprocess + RAG index) in
+one process — see `design-and-evaluation.md` section 9.4-9.5 for the full
+design, including why the RAG index is built at Render *build* time
+(`buildCommand: pip install -r requirements.txt && python -m rag.ingest`)
+rather than on first request. To deploy: connect this repo in the Render
+dashboard (it will detect `render.yaml`), set `GROQ_API_KEY` in the
+Render dashboard (never commit it), and once live, smoke-test it:
+
+```bash
+python -m scripts.deployment_smoke_test https://your-app.onrender.com
+```
+
+`deployed.md` has the (currently placeholder) record of the actual
+deployed URL, date, and commit once this has been done — see
+`design-and-evaluation.md` section 12 for exactly what deployment steps
+remain (none of them can be completed from this development environment,
+which has no Render account or `GROQ_API_KEY`).
+
+## Requirements coverage
+
+`docs/requirements-coverage-matrix.md` maps every item in
+`docs/acceptance-checklist.md` to its implementation file, test/evidence,
+and documentation section, with an honest status
+(complete / pending-live-validation / pending-deployment).
 
 ## AI tooling
 

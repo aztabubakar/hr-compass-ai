@@ -3,10 +3,14 @@
 This document tracks architecture decisions, design rationale, and (in
 later phases) evaluation results for HR Compass AI. It is updated as each
 phase is implemented. **Current status: Phase 1 (project foundation + RAG
-foundation), Phase 2 (MCP server/client tool layer), and Phase 3 (LLM
-agent orchestrator + FastAPI web app + chat UI) are complete.** Phase 4
-(CI/CD, deployment, evaluation harness) has not started; see "Remaining
-Work" at the end.
+foundation), Phase 2 (MCP server/client tool layer), Phase 3 (LLM agent
+orchestrator + FastAPI web app + chat UI), and Phase 4 (evaluation harness,
+CI/CD, deployment configuration) are all complete in code and tests.**
+What remains is executing the actual deployment and a live-model
+evaluation/validation pass, since neither a Render account/API key nor a
+`GROQ_API_KEY` was available in this development environment -- see
+section 12, "Remaining Work," for the precise, honest list of what a human
+still needs to do before this project is demo-ready.
 
 ## 1. The company
 
@@ -992,42 +996,376 @@ automated test prove real MCP tool discovery/calling through the protocol.
   via the global handler; and the root page serving the chat UI with its
   required elements present.
 
-## 9. Remaining Work (Phase 4+)
+## 9. CI/CD and Deployment (Phase 4)
 
-Not yet implemented, per `PROJECT_SPEC.md` and `docs/acceptance-checklist.md`:
+### 9.1 Architecture diagram
 
-- GitHub Actions CI (install, import/build check, tests, MCP
-  discovery/tool-call test) gating deployment; free-tier deployment
-  (Render or equivalent); `deployed.md` filled in once deployed.
-- Evaluation harness: 20-30 cases with gold answers/rubrics; groundedness,
-  citation accuracy, tool-selection accuracy, workflow completion,
-  clarification/escalation accuracy, action-safety pass rate, p50/p95
-  latency; at least one ablation. Two natural ablations are already set up
-  by this phase's design and need only be run and written up: **hashing
-  vs. fastembed retrieval quality** (both backends share one interface
-  end-to-end since Phase 1), and comparing agent behavior/latency with the
-  code-enforced confirmation gate (Section 7.6) on vs. off.
-- A recorded 7-10 minute demo covering both required workflows through the
-  real UI/agent, MCP tool names/arguments/outputs, citations, architecture,
-  deployment, and CI/CD.
+```
+Browser
+   |
+   v
+FastAPI (app/main.py)  --serves--> Static chat UI (app/static/index.html)
+   |
+   v
+Agent Orchestrator (agent/orchestrator.py)
+   |                                  \
+   v                                   v
+LLM Provider (llm/)                MCP Client (mcp_client/client.py)
+  Groq (prod) / FakeLLMProvider       | stdio (subprocess)
+  (tests/offline eval)                v
+                                    MCP Server (mcp_server/server.py, 8 tools)
+                                       |            |
+                                       v            v
+                              RAG index         Synthetic HR data
+                          (rag/, FAISS +      (mock_data/*.json via
+                           fastembed/hashing)   mock_data/loader.py)
+                                       |
+                                       v
+                          Compliance engine (mcp_server/compliance.py)
+```
 
-## 10. Decisions the student/user may want to weigh in on for Phase 4
+Every arrow above is a real, load-bearing dependency in the actual code
+(not aspirational): `app/main.py`'s `lifespan()` constructs one
+`MCPClient` and hands it to a fresh `AgentOrchestrator` per `/chat` call;
+`AgentOrchestrator` never imports `mcp_server.tools` directly, only calls
+through `MCPClient` over the real MCP stdio protocol to the separate
+`mcp_server.server` subprocess; that subprocess is the only thing that
+touches `rag/` (via `search_policy_documents`/`get_policy_section`),
+`mock_data/` (via the employee/PTO/benefits/ticket tools), and
+`mcp_server/compliance.py` (via `check_policy_compliance`). The LLM
+provider is swappable (Groq in production, `FakeLLMProvider` in every
+automated test and in `evaluation/run_offline.py`) without touching
+`agent/` at all, since both speak only `llm/base.py`'s `LLMProvider`
+interface.
 
-- **Groq model choice**: `GROQ_MODEL` defaults to a current Llama 3.3
-  tool-calling-capable model (`llm/groq_provider.py`) but is fully
-  overridable; worth confirming against Groq's current free-tier model
-  list and rate limits before the recorded demo and before running the
-  evaluation harness (affects both quality and p50/p95 latency numbers).
-- **Chat UI**: this phase used a minimal FastAPI-served frontend (no
+### 9.2 Expected MCP tool sequence for the two required demo workflows
+
+Not hard-coded anywhere (per `agent/orchestrator.py`'s design -- the LLM
+alone decides this), but this is the sequence a well-behaved model
+produces, and the exact sequence `evaluation/scripts.py` scripts for
+`EVAL-006` (PTO) and `EVAL-008` (remote work) in the deterministic
+offline evaluation:
+
+**PTO workflow** ("My employee ID is EMP-1001. Can I take three days of
+PTO next week?"):
+1. `lookup_employee_profile(employee_id="EMP-1001")`
+2. `check_pto_balance(employee_id="EMP-1001")`
+3. `search_policy_documents(query="PTO request notice and manager approval", document_id="POL-PTO-001")`
+4. `check_policy_compliance(employee_id="EMP-1001", scenario_type="pto_request", requested_days=3, notice_business_days=10)`
+5. Final grounded answer, citing POL-PTO-001, no ticket/email created.
+
+**Remote-work workflow** ("I'm EMP-1002. Can I work from Colorado for six
+weeks?"):
+1. `lookup_employee_profile(employee_id="EMP-1002")`
+2. `search_policy_documents(query="remote work Work From Anywhere allowance", document_id="POL-RWK-001")`
+3. `search_policy_documents(query="interstate work location payroll registered states", document_id="POL-LOC-001")`
+4. `check_policy_compliance(employee_id="EMP-1002", scenario_type="remote_work_request", destination_state="Colorado", duration_calendar_days=42)`
+5. Final grounded answer citing both POL-RWK-001 and POL-LOC-001 (a real
+   multi-document case), reporting that Payroll and People & Culture
+   Team approval is required (escalation).
+
+### 9.3 GitHub Actions CI (`.github/workflows/ci.yml`)
+
+Runs on every `push` and `pull_request`. A single `test` job: checkout,
+set up Python 3.11, `pip install -r requirements.txt`, an import/build
+check (imports the key modules, then runs `rag.ingest` with the hashing
+backend to a scratch directory as a build smoke test), the full offline
+`pytest` suite (145 tests as of this phase), `scripts/mcp_smoke_test.py`
+(explicit MCP discovery + tool-call check, the specific step
+`PROJECT_SPEC.md`/`docs/acceptance-checklist.md` call out separately from
+the general test suite), `scripts/app_smoke_test.py` (FastAPI app-start
+check via `TestClient` entering the real `lifespan()`), `evaluation.run_offline`
+(deterministic evaluation smoke test), and `evaluation.ablation` (the
+top-k retrieval ablation, also offline). `EMBEDDING_BACKEND=hashing` is
+set once at the workflow level so nothing needs network access to
+download embedding model weights; no step sets `GROQ_API_KEY` or calls a
+real LLM or any other paid/external service.
+
+A second `deploy` job runs only when `test` succeeds, and only for a
+`push` to `main` (never for a `pull_request`, which could come from a
+fork). It does not deploy anything itself -- it POSTs to a Render "Deploy
+Hook" URL stored as the `RENDER_DEPLOY_HOOK_URL` repository secret, which
+triggers Render's own build+deploy. Until that secret is set (a one-time,
+human setup step -- see the job's comments in `ci.yml`), the job is a
+documented no-op rather than a false claim of gating. **This is the
+concrete answer to "deployment must only occur if tests pass":** once
+Render's own "Auto-Deploy" setting is turned off (also a one-time human
+step, since it's a Render dashboard setting, not something in this repo)
+and the deploy hook secret is set, the *only* way this service redeploys
+is through this `deploy` job, which cannot run unless `test` already
+passed. Without that one-time setup, Render's default behavior (deploying
+on every push to the connected branch regardless of CI) would still
+apply -- this document does not claim gating exists before that setup is
+actually done.
+
+### 9.4 Deployment configuration (`render.yaml`)
+
+A single free-tier Render "web" service (`runtime: python`, `plan: free`)
+running the whole architecture from section 9.1 in one process:
+`buildCommand: pip install -r requirements.txt && python -m rag.ingest`,
+`startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+(respects Render's dynamically assigned `$PORT`, per its own
+requirements), `healthCheckPath: /health`. Environment variables are
+declared by name only (`sync: false` for `GROQ_API_KEY`/`GROQ_MODEL`, set
+manually in the Render dashboard, never committed); non-secret values
+(`LLM_PROVIDER=groq`, `LLM_TEMPERATURE=0.2`, `EMBEDDING_BACKEND=fastembed`,
+`MCP_TRANSPORT=stdio`) are set directly in the file since they carry no
+sensitive information.
+
+### 9.5 RAG index build strategy at deployment (Option A: build-time)
+
+Of the three strategies CLAUDE.md/the Phase 4 brief named (A: build at
+deploy/build time, B: build on first startup if missing, C: commit a
+small generated index), **this project uses Option A**: `render.yaml`'s
+`buildCommand` runs `python -m rag.ingest` after installing dependencies,
+so every deployed instance starts with a complete, persisted FAISS index
+already on disk before `uvicorn` ever runs. This was chosen over Option B
+because it means the *first* real user request is never the one paying
+for index construction (and, with the `fastembed` backend, a model
+download) -- `/health`'s `rag.ready` is `true` from the very first request
+after a successful build, and a build failure surfaces clearly in
+Render's build log rather than as a confusing first-chat-request error.
+Option C (committing a pre-built index) was rejected: a FAISS index is a
+binary build artifact tied to a specific embedding backend/model/chunking
+configuration, and committing it would let the index silently drift out
+of sync with the policy corpus or `rag/config.py` defaults -- exactly the
+kind of non-reproducible state `.gitignore`'s existing `rag_index/` /
+`rag_index_*/` exclusion (from Phase 1) was written to avoid.
+
+The one accepted cost: the production `EMBEDDING_BACKEND=fastembed`
+means the *build* step downloads the `sentence-transformers/all-MiniLM-L6-v2`
+ONNX weights from Hugging Face the first time (and on any build where
+Render's build cache doesn't happen to have them -- Render's build cache
+persistence is not guaranteed across deploys, so this may recur on some
+deploys). This happens once per build, at build time, never at request
+time, and never repeatedly per-request -- there is no code path in this
+project that re-downloads or re-embeds anything during request handling.
+
+### 9.6 Health check hardening (`/health`)
+
+`GET /health` (see `app/main.py`, `app/models.py`) returns:
+
+```json
+{
+  "status": "ok",
+  "rag": {"ready": true},
+  "mcp": {"ready": true, "tools_discovered": 8},
+  "llm": {"configured": false, "provider": "groq"}
+}
+```
+
+`status` is `"degraded"` (never a `5xx` -- the process is still up and
+should not be killed/restarted by Render's health check over this) if RAG
+or MCP isn't ready; `llm.configured` is independently reported without
+gating `status`, since a missing `GROQ_API_KEY` means `/chat` will 503 but
+does not mean the service itself is unhealthy. `mcp.tools_discovered` is
+a live count from an actual `tools/list` call made during the health
+check (not a cached/assumed number), so it also detects a wedged MCP
+subprocess even if it was reachable at startup. Nothing here exposes a
+key, secret, or other sensitive environment value -- `llm.provider` is a
+provider *name* (`"groq"`), never a credential; this is asserted directly
+in `tests/test_api.py::test_health_returns_expected_shape`.
+
+### 9.7 Deployment smoke test (`scripts/deployment_smoke_test.py`)
+
+```
+python -m scripts.deployment_smoke_test https://your-app.onrender.com
+python -m scripts.deployment_smoke_test https://your-app.onrender.com --test-chat
+```
+
+Checks `/`, `/health`, and `/api/tools` against a live URL using only the
+standard library (`urllib.request` -- no extra dependency for a one-off
+post-deploy check), and optionally `POST /chat`, gated on `--test-chat`
+*and* the deployment's own `/health` reporting `llm.configured: true` (so
+it never guesses whether a real Groq call is safe to make against that
+deployment's quota). Prints a clear PASS/FAIL per check and a non-zero
+exit code on any failure.
+
+## 10. Evaluation (Phase 4)
+
+Full methodology, the 25-case evaluation set, metrics definitions, and
+documented limitations live in `evaluation/README.md` (not duplicated
+here in full to avoid the two documents drifting out of sync). This
+section reports what has actually been run and its numeric results, per
+CLAUDE.md's "do not claim work or verification that did not occur."
+
+### 10.1 Deterministic (offline) evaluation results
+
+Run via `python -m evaluation.run_offline`, written to
+`evaluation/results/offline_20260917T181502Z.json`. **As documented
+extensively in `evaluation/README.md`, this is an architecture-verification
+run against `FakeLLMProvider`-scripted "model" decisions, not a measurement
+of real LLM quality** -- every script in `evaluation/scripts.py` was
+written to do the right thing, so a high pass rate here demonstrates the
+orchestration/MCP/safety/citation machinery is wired correctly, not that a
+live model will behave this well unprompted.
+
+| Metric | Value |
+|---|---|
+| Cases run | 25 / 25, 0 errors |
+| Groundedness (avg) | 0.96 |
+| Citation recall (avg) | 1.00 |
+| Citation precision (avg) | 0.81 |
+| Tool selection accuracy | 1.00 |
+| Workflow completion rate | 1.00 |
+| Clarification accuracy | 1.00 |
+| Escalation accuracy | 1.00 |
+| Action-safety pass rate | 1.00 |
+| Latency p50 / p95 (offline, near-instant fake model) | 0.007s / 0.026s |
+
+By category (n, groundedness, tool selection, workflow completion,
+clarification accuracy, escalation accuracy, action-safety):
+
+| Category | n | Grounded | Tools | Workflow | Clarify | Escalate | Safety |
+|---|---|---|---|---|---|---|---|
+| A_policy_simple | 3 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| B_policy_multidoc | 1 | 0.50 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| C_employee_data | 1 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| D_pto_workflow | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| E_remote_interstate | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| F_remote_international | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| G_benefits | 1 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| H_expense_compliance | 1 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| I_ambiguous_clarification | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| J_missing_employee_id | 1 | 1.00 | n/a | 1.00 | 1.00 | 1.00 | n/a |
+| K_invalid_employee_id | 1 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| L_out_of_scope | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | n/a |
+| M_sensitive_escalation | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| N_action_confirmation_safety | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| O_tool_failure | 2 | 0.75 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+
+The two sub-1.0 groundedness cells are both explained by the documented
+keyword-coverage-proxy limitation (evaluation/README.md), not a real
+defect: B_policy_multidoc's single case's scripted answer used "paid as a
+holiday" rather than the literal rubric phrase "holiday pay," and one
+O_tool_failure case's scripted answer said "I don't have a way to..."
+rather than the literal word "can't" -- both are correct answers scored
+down by exact keyword matching, illustrating exactly why groundedness here
+is documented as a proxy, not a factuality judge.
+
+### 10.2 Live (real-model) evaluation results
+
+**Not run.** `evaluation/run_live.py` requires `GROQ_API_KEY`, which is
+not available in this development environment (confirmed before writing
+this section). Running it, and completing `evaluation/README.md`'s "Live
+model validation checklist," is listed as required, not-yet-done work in
+section 12 below. Do not read section 10.1's 1.00s as any indication of
+how a real model will score -- see 10.1's opening paragraph.
+
+### 10.3 RAG retrieval ablation: top_k=3 vs. top_k=5
+
+Run via `python -m evaluation.ablation`, written to
+`evaluation/results/ablation_topk_20260917T181626Z.json`. Uses the 14
+evaluation cases that declare `expected_policy_documents` as a
+representative query subset, against the real policy corpus (hashing
+embedding backend, fully offline/deterministic).
+
+| top_k | Queries | Doc hit rate | Doc recall (avg) | Mean top score | Mean latency | p95 latency |
+|---|---|---|---|---|---|---|
+| 3 | 14 | 0.79 | 0.71 | 0.357 | 0.06 ms | 0.07 ms |
+| 5 | 14 | 0.86 | 0.86 | 0.357 | 0.04 ms | 0.07 ms |
+
+**Interpretation:** widening retrieval from top_k=3 to top_k=5 measurably
+improves both doc hit rate (+0.07) and doc recall (+0.14) on this
+corpus/query set -- more of the multi-document and less-obviously-worded
+queries (e.g. the parental-leave-and-holiday-pay case, which needs
+evidence from two different documents) get their second relevant document
+into the candidate set only at top_k=5. `mean_top_score` is identical
+between the two settings by construction (it only reflects the single
+best-ranked result, which top_k does not change). Latency differences at
+this corpus size (141 chunks) are negligible in absolute terms
+(sub-millisecond either way, on the hashing backend) and should not be
+read as representative of latency on a larger corpus or the `fastembed`
+backend. **Conclusion: `RAG_DEFAULT_TOP_K=5` (this project's existing
+default, set in `rag/config.py` before this ablation was run) is the
+better setting for this corpus** -- the recall improvement is worth the
+small latency cost, and `rag/config.py`'s default was already correct;
+this ablation is retained as evidence for that choice, not a reason to
+change it.
+
+### 10.4 Latency methodology
+
+Per-case latency is measured as wall-clock time around each
+`AgentOrchestrator.run()` call (`evaluation/evaluator.py:run_case`), from
+just before the first LLM turn to the final structured response,
+including every MCP tool round-trip in between. p50/p95 use the
+nearest-rank method over the sample (`evaluation/metrics.py:latency_stats`
+-- documented there as adequate for a ~25-sample run, not a statistically
+robust percentile estimator). Offline-mode latency (section 10.1) reflects
+only orchestration + real MCP/RAG overhead, since `FakeLLMProvider`
+resolves near-instantly; live-mode latency (once run) will additionally
+include the real Groq API round-trip per model turn, which will dominate
+the total for any case with more than one tool call. No cold-start vs.
+warm-request separation has been measured yet, since no live deployment
+exists yet to measure against -- `deployed.md` has a placeholder for this,
+and `scripts/deployment_smoke_test.py` can be timed manually (e.g. `time
+python -m scripts.deployment_smoke_test <url>`) against a real Render
+instance immediately after a cold deploy vs. after a warm request, once
+one exists.
+
+## 11. Architecture diagram
+
+See section 9.1 above for the text-form diagram (also embedded in
+`README.md`'s architecture overview so it's visible without opening this
+document).
+
+## 12. Remaining Work
+
+See `docs/requirements-coverage-matrix.md` for the full item-by-item
+mapping of every `docs/acceptance-checklist.md` requirement to its
+implementation, test/evidence, documentation, and status (complete /
+pending-live-validation / pending-deployment) -- this section summarizes
+the same conclusion in prose.
+
+Everything in Phase 1-4's code, tests, CI configuration, and deployment
+*configuration* is complete. What remains is executing steps that require
+resources not available in this development environment, or a human
+decision this document should not make unilaterally:
+
+- **Actually deploy to Render.** `render.yaml` is written and validated as
+  YAML but has never been applied against a real Render account (none was
+  available in this session). Requires: creating the Render service from
+  this repo/blueprint, setting `GROQ_API_KEY` in the Render dashboard,
+  turning off Render's "Auto-Deploy" toggle, setting the
+  `RENDER_DEPLOY_HOOK_URL` GitHub secret (see section 9.3), and then
+  filling in `deployed.md`'s placeholders with the real URL, deploy date,
+  and commit SHA.
+- **Live Groq evaluation.** `python -m evaluation.run_live` and
+  `evaluation/README.md`'s "Live model validation checklist" both require
+  `GROQ_API_KEY`, which this environment does not have. This is the only
+  way to get a real measurement of model quality (section 10.1's numbers
+  are architecture verification only, not model quality, by design).
+- **A recorded 7-10 minute demo** covering both required workflows
+  through the real UI/agent, MCP tool names/arguments/outputs, citations,
+  architecture, deployment, and CI/CD -- best recorded against the actual
+  deployed URL once it exists, using the two demo prompts in section 9.2
+  and README.md's "Example demo prompts."
+- **Confirm the Groq model choice** (`GROQ_MODEL`, defaulting to a current
+  Llama 3.3 tool-calling model in `llm/groq_provider.py`) against Groq's
+  current free-tier model list and rate limits before the recorded demo,
+  since this affects both live evaluation quality and its p50/p95 latency.
+
+## 13. Decisions the student/user may want to weigh in on
+
+- **Groq model choice**: see section 12 above.
+- **Chat UI**: this project used a minimal FastAPI-served frontend (no
   Streamlit) since it yields a single-service deployment, simpler for a
-  free-tier host, per CLAUDE.md's stated preference for that outcome.
-  Confirm this is still the preferred direction before deployment.
+  free-tier host, per CLAUDE.md's stated preference for that outcome. Now
+  that `render.yaml` targets exactly one Render web service, this choice
+  is load-bearing for the deployment design as implemented -- worth
+  confirming it's still the preferred direction before deploying.
 - **`ConversationStore` at scale**: explicitly documented as in-memory,
-  single-process, ephemeral (Section 7.7) — fine for this project's scope;
-  would need a real shared store before a multi-worker deployment.
-- **MCP transport for deployment**: stdio (Section 6.1) works well when
+  single-process, ephemeral (section 7.7) — fine for this project's scope
+  and for Render's free tier (a single instance); would need a real shared
+  store (e.g. Redis) before any multi-worker/multi-instance deployment.
+- **MCP transport for deployment**: stdio (section 6.1) works well when
   the FastAPI process spawns the MCP server as a child process, which is
   the simplest option for a single free-tier web service and is what's
-  implemented. If the agent and chat UI ever need to run as genuinely
-  separate deployed services, that would call for the SDK's HTTP/SSE
-  transport instead.
+  implemented and deployed via `render.yaml`. If the agent and chat UI
+  ever need to run as genuinely separate deployed services, that would
+  call for the SDK's HTTP/SSE transport instead.
+- **Render's Auto-Deploy setting**: section 9.3's CI gating only works
+  once a human turns this off in the Render dashboard and sets the deploy
+  hook secret; until then, Render's own default behavior (deploy on every
+  push, independent of CI) still applies. This is a one-time manual step
+  this repository's code cannot perform on its own.

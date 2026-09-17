@@ -291,9 +291,9 @@ async function loadHealth() {
   try {
     const res = await fetch('/health');
     const data = await res.json();
-    setStatusDot('dot-mcp', data.mcp === 'connected');
-    setStatusDot('dot-rag', data.rag === 'ok');
-    setStatusDot('dot-llm', data.llm_configured === true);
+    setStatusDot('dot-mcp', data.mcp && data.mcp.ready === true);
+    setStatusDot('dot-rag', data.rag && data.rag.ready === true);
+    setStatusDot('dot-llm', data.llm && data.llm.configured === true);
   } catch (e) {
     setStatusDot('dot-mcp', false);
     setStatusDot('dot-rag', false);

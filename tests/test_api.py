@@ -40,12 +40,29 @@ def test_health_returns_expected_shape(api_client: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
-    assert data["mcp"] == "connected"
-    assert data["rag"] == "ok"
-    assert data["llm_configured"] is False  # no GROQ_API_KEY in the test environment
+    assert data["mcp"] == {"ready": True, "tools_discovered": 8}
+    assert data["rag"] == {"ready": True}
+    assert data["llm"]["configured"] is False  # no GROQ_API_KEY in the test environment
+    assert data["llm"]["provider"] == "groq"
     # Never expose secrets.
     assert "api_key" not in str(data).lower()
     assert "groq_api_key" not in str(data).lower()
+
+
+def test_health_reports_degraded_when_mcp_unavailable(api_client: TestClient) -> None:
+    # Simulate the same "MCP unreachable" state the lifespan sets when the
+    # server subprocess can't be reached at startup (see app/main.py's
+    # lifespan()), without actually breaking the process launch.
+    app.state.mcp_client = None
+    try:
+        response = api_client.get("/health")
+    finally:
+        pass  # the api_client fixture tears the whole app down after this test anyway
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "degraded"
+    assert data["mcp"]["ready"] is False
+    assert data["mcp"]["tools_discovered"] is None
 
 
 def test_api_tools_lists_all_required_tools(api_client: TestClient) -> None:

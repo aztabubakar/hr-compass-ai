@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  # The whole pipeline below runs entirely offline: the hashing embedding
+  # backend needs no model download, and no step here ever sets
+  # GROQ_API_KEY or calls a real LLM/external paid service.
+  EMBEDDING_BACKEND: hashing
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Import/build check
+        run: |
+          python -c "import app.main; import agent.orchestrator; import mcp_server.tools; import mcp_client.client; print('All key modules import cleanly.')"
+          RAG_INDEX_DIR=/tmp/ci_rag_index python -m rag.ingest
+
+      - name: Run the full offline automated test suite
+        run: pytest -q
+
+      - name: MCP discovery + tool-call smoke test
+        run: python -m scripts.mcp_smoke_test
+
+      - name: FastAPI app-start smoke test
+        run: python -m scripts.app_smoke_test
+
+      - name: Deterministic evaluation smoke test
+        run: python -m evaluation.run_offline
+
+      - name: Retrieval ablation (top_k=3 vs top_k=5)
+        run: python -m evaluation.ablation
+
+  # Deployment gate: this job only runs after `test` succeeds, and only for
+  # a push to `main` (never for a pull request, which might come from a
+  # fork). It never deploys anything itself -- Render owns the actual
+  # build/deploy -- it only *triggers* Render's deploy hook, and only once
+  # CI has passed, which is what makes "deployment only after tests pass"
+  # genuinely true rather than Render's default (auto-deploy on every push
+  # to the connected branch, independent of this workflow).
+  #
+  # Setup required once, by a repo admin, for this job to do anything:
+  #   1. In the Render dashboard, for this service, turn OFF "Auto-Deploy"
+  #      (Settings -> Build & Deploy) so Render no longer deploys on its
+  #      own on every push.
+  #   2. Copy the service's Deploy Hook URL (Settings -> Deploy Hook).
+  #   3. Add it as a GitHub Actions repository secret named
+  #      RENDER_DEPLOY_HOOK_URL (Settings -> Secrets and variables -> Actions).
+  # Until that secret is set, this job is a documented no-op (it prints
+  # guidance and exits 0) rather than silently pretending to gate anything.
+  deploy:
+    name: Trigger Render deploy (after tests pass)
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Trigger Render deploy hook (if configured)
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL secret is not set -- skipping deploy trigger."
+            echo "See this job's comments in .github/workflows/ci.yml for one-time setup steps."
+            exit 0
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Render deploy triggered."
