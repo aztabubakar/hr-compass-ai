@@ -1,0 +1,2 @@
+# Policy Corpus
+Claude Code will author a coherent synthetic policy corpus for the hypothetical company. Target 5–20 documents and roughly 30–120 pages total. Cover PTO, holidays, remote work, expenses, data security, benefits, onboarding, equipment, leave, workplace conduct, travel, and work-location/tax approval. Include stable document IDs, titles, effective dates, section headings, and policy text suitable for citations.

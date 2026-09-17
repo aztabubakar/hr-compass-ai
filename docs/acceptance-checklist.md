@@ -1,0 +1,50 @@
+# Acceptance Checklist
+
+- [ ] Local virtual environment/setup documented.
+- [ ] Dependency manifest present.
+- [ ] `.env.example`; no committed secrets.
+- [ ] 5–20 coherent policy files, about 30–120 pages total.
+- [ ] At least two policy source formats supported where feasible.
+- [ ] Document cleaning/chunking implemented and justified.
+- [ ] Embeddings + persisted lightweight vector index.
+- [ ] Citation metadata retained.
+- [ ] Top-k RAG retrieval works.
+- [ ] Grounded answers cite policy documents/sections and useful snippets.
+- [ ] Out-of-corpus/unsupported-claim guardrails.
+- [ ] Multi-document retrieval case works.
+- [ ] Agent decides between RAG-only and tool workflows.
+- [ ] At least two multi-step workflows work end-to-end.
+- [ ] Concise operational trace visible/logged; no chain-of-thought.
+- [ ] Missing employee IDs and ambiguous requests handled.
+- [ ] MCP failures handled gracefully.
+- [ ] State-changing operations are mock and confirmation-gated.
+- [ ] MCP server implemented.
+- [ ] >=5 MCP tools exposed.
+- [ ] >=1 RAG MCP tool.
+- [ ] >=1 structured-data/mock-operation MCP tool.
+- [ ] Agent actually invokes tools through MCP.
+- [ ] Chat UI implemented.
+- [ ] `/chat` or equivalent returns answer, citations, snippets, trace.
+- [ ] `/health` or equivalent returns app/MCP status.
+- [ ] PTO demo task reproducible.
+- [ ] Remote-work demo task reproducible.
+- [ ] Free-tier deployment config included.
+- [ ] GitHub Actions on push/PR.
+- [ ] App-start/import smoke test.
+- [ ] MCP discovery/tool-call automated test.
+- [ ] Deployment gated on tests.
+- [ ] 20–30 evaluation cases with gold answers/rubrics.
+- [ ] Groundedness measured.
+- [ ] Citation accuracy measured.
+- [ ] Tool-selection accuracy measured.
+- [ ] Workflow-completion measured.
+- [ ] Clarification/escalation accuracy measured.
+- [ ] Action-safety pass rate measured.
+- [ ] p50/p95 latency measured; cold/warm noted where possible.
+- [ ] At least one ablation/comparison.
+- [ ] `README.md` complete.
+- [ ] `design-and-evaluation.md` complete.
+- [ ] `ai-tooling.md` complete.
+- [ ] `deployed.md` complete.
+- [ ] Architecture diagram included.
+- [ ] 7–10 minute demo script/checklist prepared.

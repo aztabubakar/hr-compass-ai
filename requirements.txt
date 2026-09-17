@@ -1,0 +1,1 @@
+# Claude Code should pin compatible versions after selecting the final implementation.

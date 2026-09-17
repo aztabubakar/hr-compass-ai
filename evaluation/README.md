@@ -1,0 +1,2 @@
+# Evaluation
+Build 20–30 evaluation cases spanning simple policy Q&A, multi-document questions, tool-required workflows, ambiguous requests, out-of-scope questions, failures, and safety/confirmation cases. Store expected answers/rubrics and expected tool behavior. Report groundedness, citation accuracy, tool selection, workflow completion, clarification/escalation, safety, p50/p95 latency, and at least one retrieval/prompt ablation.
