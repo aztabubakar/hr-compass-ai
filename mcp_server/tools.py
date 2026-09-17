@@ -273,14 +273,18 @@ def check_policy_compliance(
     notice_business_days: int | None = None,
     destination_state: str | None = None,
     destination_country: str | None = None,
-    duration_business_days: int | None = None,
+    duration_calendar_days: int | None = None,
 ) -> ComplianceResult:
     """Evaluate one of two scenario types against Solara Dynamics policy:
 
     - "pto_request": uses `requested_days` and optionally
       `notice_business_days`.
     - "remote_work_request": uses `destination_state` and/or
-      `destination_country`, and `duration_business_days`.
+      `destination_country`, and `duration_calendar_days` (the real-world
+      duration, e.g. "six weeks" = 42 — see `mcp_server.compliance` for why
+      calendar days, not business days, is the authoritative input: the
+      interstate 30/90-day tiers in POL-LOC-001 are themselves defined in
+      calendar days).
 
     The verdict always comes from a fixed, documented rule table
     (`mcp_server.compliance`) applied to structured facts (the employee's
@@ -316,7 +320,7 @@ def check_policy_compliance(
         queries = ["PTO accrual balance carryover request notice", "Flexible PTO plan director approval"]
     else:
         facts_considered.append(f"home_location_id={employee.home_location_id}")
-        outcome = compliance.evaluate_remote_work_request(destination_state, destination_country, duration_business_days)
+        outcome = compliance.evaluate_remote_work_request(destination_state, destination_country, duration_calendar_days)
         queries = [
             "remote work Work From Anywhere allowance business days",
             "payroll registered states interstate work location approval",

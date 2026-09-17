@@ -222,7 +222,7 @@ def test_compliance_remote_work_interstate_requires_approval(mcp_server_env: dic
         async with MCPClient(env=mcp_server_env) as client:
             result = await _call(client, "check_policy_compliance", {
                 "employee_id": "EMP-1002", "scenario_type": "remote_work_request",
-                "destination_state": "Colorado", "duration_business_days": 30,
+                "destination_state": "Colorado", "duration_calendar_days": 42,
             })
             assert result["status"] == "requires_approval"
             assert result["escalation_required"] is True
@@ -237,7 +237,7 @@ def test_compliance_remote_work_international_requires_approval(mcp_server_env: 
         async with MCPClient(env=mcp_server_env) as client:
             result = await _call(client, "check_policy_compliance", {
                 "employee_id": "EMP-1003", "scenario_type": "remote_work_request",
-                "destination_country": "Portugal", "duration_business_days": 30,
+                "destination_country": "Portugal", "duration_calendar_days": 42,
             })
             assert result["status"] == "requires_approval"
             assert "Global Mobility review" in result["required_approvals"]
@@ -250,7 +250,7 @@ def test_compliance_remote_work_unsupported_country_is_non_compliant(mcp_server_
         async with MCPClient(env=mcp_server_env) as client:
             result = await _call(client, "check_policy_compliance", {
                 "employee_id": "EMP-1003", "scenario_type": "remote_work_request",
-                "destination_country": "Thailand", "duration_business_days": 30,
+                "destination_country": "Thailand", "duration_calendar_days": 42,
             })
             assert result["status"] == "non_compliant"
 

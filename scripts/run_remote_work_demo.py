@@ -16,17 +16,17 @@ from scripts.demo_workflows import run_remote_work_workflow
 
 async def main() -> None:
     async with MCPClient() as client:
-        print("=== Remote-work workflow: EMP-1002, Colorado, 30 business days (interstate) ===\n")
+        print("=== Remote-work workflow: EMP-1002, Colorado, six weeks / 42 calendar days (interstate) ===\n")
         trace_a, compliance_a = await run_remote_work_workflow(
-            client, "EMP-1002", destination_state="Colorado", duration_business_days=30
+            client, "EMP-1002", destination_state="Colorado", duration_calendar_days=42
         )
         print(json.dumps(trace_a, indent=2))
         print("\nFinal compliance result:")
         print(json.dumps(compliance_a, indent=2))
 
-        print("\n\n=== Remote-work workflow: EMP-1003, Portugal, 30 business days (international) ===\n")
+        print("\n\n=== Remote-work workflow: EMP-1003, Portugal, six weeks / 42 calendar days (international) ===\n")
         trace_b, compliance_b = await run_remote_work_workflow(
-            client, "EMP-1003", destination_country="Portugal", duration_business_days=30
+            client, "EMP-1003", destination_country="Portugal", duration_calendar_days=42
         )
         print(json.dumps(trace_b, indent=2))
         print("\nFinal compliance result:")

@@ -3,9 +3,10 @@
 This document tracks architecture decisions, design rationale, and (in
 later phases) evaluation results for HR Compass AI. It is updated as each
 phase is implemented. **Current status: Phase 1 (project foundation + RAG
-foundation) and Phase 2 (MCP server/client tool layer) are complete.**
-Phase 3 (the LLM agent orchestrator, chat UI, CI/CD, deployment,
-evaluation) has not started; see "Remaining Work" at the end.
+foundation), Phase 2 (MCP server/client tool layer), and Phase 3 (LLM
+agent orchestrator + FastAPI web app + chat UI) are complete.** Phase 4
+(CI/CD, deployment, evaluation harness) has not started; see "Remaining
+Work" at the end.
 
 ## 1. The company
 
@@ -34,10 +35,12 @@ core/        Shared utilities (paths, operational trace model)
 rag/         RAG ingestion + retrieval pipeline
 mcp_server/  MCP server: 8 tools wrapping rag/ + mock_data/ (Phase 2)
 mcp_client/  Async MCP client (Phase 2)
-scripts/     Deterministic tool-level demo workflows + smoke test (Phase 2)
+llm/         Provider-agnostic LLM abstraction (Groq default, FakeLLMProvider for tests) (Phase 3)
+agent/       LLM agent orchestrator: bounded tool-calling loop, prompts, structured output (Phase 3)
+app/         FastAPI web app (/health, /chat, /api/tools) + static chat UI (Phase 3)
+scripts/     Deterministic tool-level demo workflows + MCP/agent smoke tests (Phase 2/3)
 mcp/         Documentation pointer only; see Section 6 for why
-agent/       (Phase 3) LLM agent orchestrator
-evaluation/  (Phase 3) evaluation harness and cases
+evaluation/  (Phase 4) evaluation harness and cases
 tests/       pytest suite
 docs/        Architecture reference docs (pre-existing, authoritative spec)
 ```
@@ -59,10 +62,13 @@ independently unit-testable and swappable (e.g. the embedding backend).
 
 `requirements.txt` pins exact versions (a `pip freeze` of the resolved
 environment) for full reproducibility, per CLAUDE.md's instruction to pin
-compatible versions once the implementation is selected. Only the
-dependencies actually used in this phase are installed; a commented section
-lists what Phase 2 will add (FastAPI, an MCP SDK, a chat UI layer) so the
-overall intended stack is visible without installing unused packages now.
+compatible versions once the implementation is selected. Each phase added
+only the dependencies it actually needed: Phase 1 the RAG stack, Phase 2
+the official `mcp` SDK, Phase 3 `openai` (as an OpenAI-compatible client
+for Groq — see Section 7.1), `fastapi`, and `uvicorn[standard]`. Total
+installed footprint remains modest (~450 MB across all three phases,
+CPU-only, no torch/CUDA) — see `requirements.txt`'s own inline comments
+for what each dependency is for.
 
 **Deviation from CLAUDE.md's preferred stack:** CLAUDE.md suggests
 "SentenceTransformers or another zero-cost embedding model." We use
@@ -452,22 +458,24 @@ produced the result:
    thresholds already written into the policy corpus: the PTO accrual/
    balance arithmetic and notice-day tiers (POL-PTO-001), the 20-business-
    day "Work From Anywhere" allowance (POL-RWK-001), the interstate 30/90-
-   day approval tiers and payroll-registered-state list (POL-LOC-001), and
-   the 30-business-day international EOR allowance and approved-country
-   list (POL-LOC-001). Encoding these once means every compliance check
-   applies them consistently. One documented simplification: the tool's
-   `duration_business_days` input is compared against a business-day
-   approximation of POL-LOC-001's calendar-day interstate tiers (see the
-   `INTERSTATE_RELOCATION_TIER_BUSINESS_DAYS` constant and its comment) —
-   reconciling calendar vs. business days precisely is left to Phase 3.
-3. **Future LLM interpretation (not built yet).** Turning a free-form
-   employee question ("can I take three days next week?") into this
-   tool's typed arguments, and turning a `ComplianceResult` back into
-   natural-language prose, is explicitly the Phase 3 agent's job. This
+   *calendar*-day approval tiers and payroll-registered-state list
+   (POL-LOC-001), and the 30-business-day international EOR allowance and
+   approved-country list (POL-LOC-001). Encoding these once means every
+   compliance check applies them consistently, and — as of this phase —
+   in the exact unit the policy itself states each one in. Earlier
+   (Phase 2), the interstate tiers were evaluated against a business-day
+   *approximation* of POL-LOC-001's calendar-day thresholds; that
+   approximation has been replaced with exact calendar-day evaluation.
+   See "Exact calendar-day compliance fix" (Section 6.10) below.
+3. **LLM interpretation.** Turning a free-form employee question ("can I
+   take three days next week?") into this tool's typed arguments, and
+   turning a `ComplianceResult` back into natural-language prose, is the
+   agent's job (`agent/orchestrator.py`, via the LLM's tool-calling
+   decisions) — this module never sees the user's original wording. This
    tool's input is deliberately a small, fixed set of typed fields per
    `scenario_type` (not a generic free-text or nested-facts blob) so its
-   JSON Schema stays simple for tool discovery and so today's Phase 2
-   proof scripts can call it directly and deterministically.
+   JSON Schema stays simple for tool discovery and so both the Phase 2
+   proof scripts and the Phase 3 agent can call it the same way.
 
 ### 6.6 Mock action safety
 
@@ -561,9 +569,325 @@ See `README.md` "Run the two deterministic demo workflows" to reproduce
 these locally, and `tests/test_mcp_workflows.py` for the automated
 assertions on both.
 
-## 7. Testing
+### 6.10 Exact calendar-day compliance fix (Phase 3)
 
-`pytest` (82 tests total, all passing).
+Phase 2's `check_policy_compliance` accepted a `duration_business_days`
+argument for the remote-work scenario and compared it against
+`INTERSTATE_RELOCATION_TIER_BUSINESS_DAYS = 65` — an approximation of
+POL-LOC-001 Section 4's real threshold, which is stated in **calendar**
+days (30/90), not business days. This was flagged as a known
+simplification and has now been fixed:
+
+- The tool's input is now `duration_calendar_days` — one authoritative,
+  real-world duration (e.g. "six weeks" = 42), matching how a person
+  would actually describe a request and avoiding a caller having to do
+  unit conversion themselves.
+- POL-LOC-001 Section 4's interstate tiers (`INTERSTATE_NO_APPROVAL_CALENDAR_DAYS = 30`,
+  `INTERSTATE_PAYROLL_APPROVAL_CALENDAR_DAYS = 90`) are now evaluated
+  directly against `duration_calendar_days` — no unit conversion, no
+  approximation.
+- POL-RWK-001 Section 6's 20-business-day "Work From Anywhere" allowance
+  and POL-LOC-001 Section 6's 30-business-day international allowance
+  remain evaluated in business days, because *the policy itself* states
+  those two thresholds in business days ("Up to 20 business days...";
+  "6 consecutive weeks (30 business days)..."). A business-day count is
+  now derived from `duration_calendar_days` only for these two checks,
+  via `mcp_server.compliance.calendar_to_business_days()`, using a plain
+  5-business-days-per-7-calendar-days ratio — which is exactly the ratio
+  the policy's own text implies (6 weeks = 42 calendar days = 30 business
+  days). No threshold is silently reinterpreted into the wrong unit.
+- A genuine edge case this surfaced: a domestic request can be short
+  enough to clear POL-LOC-001's 30-calendar-day "no additional approval"
+  tier while still exceeding POL-RWK-001's 20-business-day allowance (a
+  narrow window around ~28-30 calendar days). Rather than picking one
+  policy over the other, the rule now evaluates both literally: POL-LOC-001's
+  own ≤30-calendar-day tier governs the *approval outcome* (no additional
+  approval required), while the reasons text separately notes when the
+  request would need to be routed as a formal Work Location Change
+  Request per POL-RWK-001 rather than informal manager notice. See
+  `evaluate_remote_work_request`'s docstring and
+  `test_interstate_short_stay_exceeding_work_from_anywhere_business_days_still_compliant`
+  in `tests/test_compliance_rules.py`.
+- 21 new regression tests (`tests/test_compliance_rules.py`) check both
+  the international and interstate boundaries directly and exhaustively:
+  30 vs. 31 calendar days (compliant -> requires Payroll/P&C approval), 90
+  vs. 91 calendar days (Payroll/P&C tier -> relocation/VP tier), and 42
+  vs. 43 calendar days for the international business-day allowance (30
+  vs. 31 business days, requires-approval -> non-compliant) — plus a test
+  that the policy corpus's own "Worked Examples" section (six weeks to
+  Colorado -> the 31-90-day tier, "approvable with review") matches the
+  code's actual output.
+- No policy content was changed to make this fix easier; the fix makes
+  the code match the policy, not the other way around.
+
+## 7. Agent, LLM Provider, and Web Application (Phase 3)
+
+### 7.1 LLM provider abstraction
+
+`agent/` depends only on `llm.base.LLMProvider` (`async def chat(messages,
+tools) -> LLMResponse`) — a small, OpenAI-tool-calling-shaped interface
+(`ChatMessage`, `ToolCall`, `ToolDefinition`, `LLMResponse`), never on a
+specific vendor SDK. Two implementations exist:
+
+- **`llm.groq_provider.GroqProvider`** (production default). **Groq** was
+  chosen as the primary provider because it has a genuinely free tier with
+  fast inference for open-weight, tool-calling-capable models (Llama 3.3
+  by default), fitting this project's free-tier-compatibility requirement.
+  Implemented via the official `openai` Python SDK pointed at Groq's
+  OpenAI-compatible endpoint (`https://api.groq.com/openai/v1`) rather
+  than a Groq-specific SDK or a bespoke HTTP client — Groq (and most other
+  low-cost inference providers: OpenAI itself, Together, Fireworks, a
+  local vLLM/Ollama server) already speak this same API shape, so adding
+  another provider later is a thin subclass that changes `base_url` and
+  which env vars it reads, not a rewrite. Configuration is entirely via
+  environment variables: `GROQ_API_KEY` (required to construct it — raises
+  `LLMConfigError` with setup instructions if missing, at construction
+  time, before any network call), `GROQ_MODEL` (optional; falls back to a
+  documented current default), `LLM_TEMPERATURE` (default `0.2` — low/
+  near-deterministic, appropriate for HR policy answers where consistent
+  grounding matters more than creative variety), `LLM_TIMEOUT_SECONDS`
+  (default `30`). Runtime failures (timeout, auth rejected, rate limit,
+  any other API error) are caught and re-raised as a single
+  `LLMProviderError` with a specific, clean message — never a raw SDK
+  exception.
+- **`llm.fake_provider.FakeLLMProvider`** (tests only). A deterministic,
+  scripted stand-in: constructed with a list of pre-built `LLMResponse`s,
+  it pops and returns the next one on each `chat()` call and records
+  exactly what it was sent. No network call, ever. This is what makes it
+  possible to *prove* the agent's tool-selection loop is genuinely
+  model-driven rather than hard-coded: the test picks which tool the
+  "model" decides to call next, and asserts the orchestrator correctly
+  acted on that decision — see Section 7.3 and `tests/test_agent_orchestrator.py`.
+
+`llm.config.get_provider()` constructs the configured real provider (only
+"groq" is currently supported; requesting anything else raises
+`LLMConfigError`) and is never called at import time — importing `llm`,
+`agent`, or `app.main` never requires an API key or makes a network call;
+only actually handling a `/chat` request (or running
+`scripts/agent_smoke_test.py`) does. This is what keeps the automated test
+suite free of any Groq dependency.
+
+### 7.2 Agent architecture: a bounded tool-calling loop, not a workflow
+
+**`AgentOrchestrator.run()` (`agent/orchestrator.py`) contains no
+`if PTO: call A; call B` branching, for any topic.** On every iteration it
+gives the LLM the MCP tool schemas (discovered fresh each `run()` call via
+`mcp_client.MCPClient.list_tools()` — real MCP `tools/list`, never
+hard-coded) and the conversation so far, and the LLM alone decides whether
+to call a tool (which one, with what arguments), ask a clarifying
+question, or give a final answer. The orchestrator's job is only to:
+
+1. Discover tools through the real MCP client.
+2. Send the conversation + tool schemas to the LLM provider.
+3. If the model requests one or more tool calls, execute each via
+   `mcp_client.MCPClient.call_tool()` — a genuine MCP `tools/call` request
+   over stdio, never a direct import of `mcp_server.tools` — record an
+   operational trace step (`core.trace.TraceRecorder`), extract any
+   citable evidence (`agent/tool_results.py`), and feed the real result
+   back to the model as a `"tool"`-role message.
+4. Repeat, up to a hard cap of `DEFAULT_MAX_ITERATIONS = 10` (configurable
+   per-`AgentOrchestrator` instance) LLM calls, to guarantee termination
+   even if a model gets stuck calling tools indefinitely. Hitting the cap
+   produces a graceful, `escalated=True` response rather than hanging or
+   erroring.
+5. Once the model responds with no further tool calls, parse its final
+   text for the two reserved control prefixes (Section 7.4) and return a
+   typed `agent.schemas.AgentResponse`.
+
+The Phase 2 deterministic scripts (`scripts/demo_workflows.py`) still
+exist and still hard-code their call sequence — they remain useful as a
+tool-layer smoke test, a source of realistic fixtures, and a way to
+demonstrate the MCP layer independent of any one LLM's behavior — but the
+orchestrator never uses or calls into them, and they do not influence how
+`AgentOrchestrator` behaves in any way.
+
+**What the LLM receives**, each turn: the system prompt (Section 7.5), the
+conversation so far (including prior tool results as `"tool"`-role
+messages, each JSON-serialized straight from the MCP call — no Python
+object representations or internal details), and the discovered tool
+schemas. **What it does not receive**: anything about how a tool is
+implemented, database/file paths, or this codebase's module structure.
+
+### 7.3 Tool discovery and selection: proof, not just design
+
+Because "the agent chooses tools dynamically" is a specific, checkable
+claim, `tests/test_agent_orchestrator.py` is built to prove it rather than
+just exercise it: each test constructs a `FakeLLMProvider` scripted with a
+plausible-but-arbitrary sequence of tool-call decisions for its scenario
+(a different combination of tools, and a different order, per test — e.g.
+`search -> nothing else` for a policy-only question, four tools in
+sequence for PTO, five for international remote work), runs it against a
+*real* `mcp_server.server` subprocess, and asserts the orchestrator
+executed exactly that sequence and produced correctly-shaped output. Since
+`AgentOrchestrator` has no knowledge of "PTO" or "remote work" as concepts
+anywhere in its code, the only way these tests can pass is if the loop
+generically executes whatever the model (real or fake) decides.
+
+### 7.4 Structured output and the CLARIFY:/CONFIRM: convention
+
+`agent.schemas.AgentResponse` (a pydantic model) is the typed contract
+returned by every `run()` call and re-exposed by `POST /chat`
+(`app.models.ChatResponse`, which adds `conversation_id`):
+`answer`, `citations` (`document_id`/`document_title`/`section`/`snippet`/
+`source_path`), `snippets`, `trace`, `requires_clarification`,
+`requires_confirmation`, `escalated`.
+
+**Citations are never parsed from the model's prose.** They are compiled
+by `agent/tool_results.py` directly from the actual MCP tool results seen
+during the turn (`search_policy_documents`'s hits,
+`get_policy_section`'s content, `check_policy_compliance`'s citations),
+deduplicated, and attached to the response independent of what the model
+chose to say. This is what "never fabricate citations" means concretely
+here: even if the model's prose mentions a document ID incorrectly or not
+at all, `AgentResponse.citations` only ever contains evidence a real tool
+call actually returned.
+
+**`requires_clarification`/`requires_confirmation`** are derived from two
+reserved prefixes the system prompt asks the model to use on its final
+answer — `CLARIFY: <question>` and `CONFIRM: <proposed action>` — which
+`agent.orchestrator._parse_control_prefix()` recognizes and strips
+(case-insensitively) before the text is shown to a user. This is a small,
+explicit, testable convention rather than trying to infer intent from
+free-form prose after the fact (e.g. guessing whether a sentence "is a
+question"), and it is exactly what `FakeLLMProvider`-scripted tests
+exercise directly.
+
+**`escalated`** is derived structurally, from the trace (any step whose
+`escalation` field is set — currently set when `check_policy_compliance`
+returns `escalation_required=true`, when tool discovery or an MCP call
+fails at the transport level, or when the iteration cap is hit) — not from
+another prefix the model has to remember to add, so it stays reliable even
+for cases (an MCP outage, a runaway loop) the model never gets a chance to
+comment on.
+
+### 7.5 Prompting strategy
+
+The system prompt (`agent/prompts.py`, `SYSTEM_PROMPT`, versioned via
+`SYSTEM_PROMPT_VERSION`) is kept in its own module, in source control,
+separate from orchestration logic, so wording changes are reviewable on
+their own. It explicitly instructs the model (see the file for exact
+wording) to: use policy retrieval when a claim needs policy evidence and
+employee-data tools when a claim needs a specific employee's facts (and
+both together when a request needs both, e.g. a concrete PTO request);
+never fabricate an employee record or a policy; use
+`check_policy_compliance` for concrete PTO/remote-work scenarios rather
+than trying to do the threshold arithmetic itself from raw policy text;
+read and react to tool failures instead of presenting them as success;
+ask for a missing employee ID or ask one concise clarifying question
+when genuinely ambiguous, rather than guessing; say plainly when the
+corpus doesn't contain a policy rather than inventing an answer, and
+optionally suggest contacting HR; for a sensitive workplace issue, ground
+in the conduct/reporting policy, make clear it isn't a substitute for an
+HR investigation, and never create a ticket without explicit confirmation;
+stay in scope and redirect politely otherwise; distinguish a retrieved
+policy fact from an added suggestion; never send an email (`draft_hr_email`
+only ever drafts) and never call `create_mock_hr_ticket` with
+`confirmed=true` without the user's explicit prior yes; give a plain-text
+answer with no narrated tool use and no visible step-by-step reasoning
+(only the two reserved prefixes are special); output operational facts
+only through the trace, never through prose.
+
+### 7.6 Guardrails and action-confirmation safety (prompt + code, not prompt alone)
+
+Groundedness and the "never fabricate" rules above are enforced two ways,
+deliberately not relying on prompting alone:
+
+- **Retrieval-level**: `rag.retrieval`'s `has_sufficient_evidence` and
+  `check_policy_compliance`'s `rule_basis="insufficient_evidence"`
+  override (Section 6.5) are structural — the tool itself declines to
+  assert a compliance verdict without real supporting evidence,
+  independent of anything the model does with that information.
+- **Action confirmation**: for `create_mock_hr_ticket`, the system prompt
+  instructs the model never to set `confirmed=true` without the user's
+  prior explicit agreement — but `AgentOrchestrator.run()` also enforces
+  this **in code**, not just via the prompt. It accepts a
+  `prior_turn_requires_confirmation: bool` parameter (read by
+  `app/main.py` from `app.state.ConversationStore`, which remembers
+  whether the *immediately preceding* assistant turn in this conversation
+  was itself a `CONFIRM:` offer) and, before sending any call to a tool in
+  `_CONFIRMATION_GATED_TOOLS` (currently just `create_mock_hr_ticket`;
+  extending this set is how "the same principle should apply to any
+  future action-like tool" is meant to be satisfied) with
+  `confirmed=true`, checks that flag. If the immediately preceding turn
+  was **not** a confirmation offer, the argument is rewritten to
+  `confirmed=false` before the call is made — the model literally cannot
+  create a ticket in one shot, no matter what it decides, even if asked
+  directly ("please file a ticket") in a single message; the conversation
+  must pass through an explicit offer-and-confirm exchange first, matching
+  the assignment's stated flow exactly ("I can create a mock HR case...
+  Would you like me to proceed?" -> explicit yes -> then, and only then,
+  `confirmed=true`). See `tests/test_agent_orchestrator.py::test_ticket_creation_without_prior_confirmation_turn_is_downgraded_to_preview`
+  and `::test_ticket_creation_after_confirmation_offer_is_allowed`.
+
+### 7.7 Conversation state
+
+`app.state.ConversationStore` is an **explicitly ephemeral, in-memory**
+store — no Redis, no database, per this phase's constraints. Per
+`conversation_id`, it keeps the final user message and final assistant
+answer of each turn (not the intermediate tool-call/tool-result chatter
+that produced that answer — replaying that into every future turn would
+grow unbounded and mostly restates what's already folded into the answer
+text) plus whether the last turn was a confirmation offer (Section 7.6).
+State is lost on restart/redeploy and is **not** shared across worker
+processes if the app is ever run with more than one — both are documented,
+accepted limitations at this project's scale (a single-worker free-tier
+deployment, demo-length conversations), not oversights.
+
+### 7.8 FastAPI application
+
+`app/main.py`. The MCP client is connected **once**, at app startup, via a
+`lifespan` context manager (`app.state.mcp_client`), and closed at
+shutdown — not spawned per request, which would mean a new subprocess for
+every chat message. Both MCP and LLM unavailability degrade gracefully
+rather than crash the app: if the MCP server can't be reached at startup,
+`app.state.mcp_client` is `None` and `/health`/`/chat` report it
+accurately (`/chat` returns a clean `503`) instead of the app failing to
+boot; `GROQ_API_KEY` being unset is likewise a clean `503` from `/chat`
+(via the `get_llm_provider` FastAPI dependency, which is also how tests
+substitute `FakeLLMProvider` — `app.dependency_overrides[get_llm_provider] = ...`
+— without touching real configuration).
+
+Endpoints:
+
+- **`GET /health`** — `{"status": "ok", "mcp": "connected"|"unavailable", "rag": "ok"|"not_built", "llm_configured": bool}`. Cheap by design (checks cached connection state and whether the index directory exists on disk; does not re-verify liveness with a live MCP call or construct an LLM client on every ping) and never includes secret values.
+- **`POST /chat`** — `{"message": str, "conversation_id": str | null}` -> `ChatResponse` (`AgentResponse` + `conversation_id`). Runs the full agent loop for one turn.
+- **`GET /api/tools`** — the discovered MCP tools and their JSON schemas, for debugging/demo use.
+
+A global exception handler (`@app.exception_handler(Exception)`) is the
+last-resort safety net: anything that reaches it is logged server-side
+(with the real traceback, for operators) and answered with a generic
+`{"detail": "An unexpected error occurred. Please try again."}` at `500`
+— no exception message or traceback ever reaches the client. In practice
+this should rarely trigger, since `AgentOrchestrator.run()` already
+catches every anticipated failure mode (LLM errors, MCP transport errors,
+per-tool errors) and returns a normal `AgentResponse` instead of raising.
+
+### 7.9 Web chat UI
+
+A single self-contained page (`app/static/index.html`; no build step, no
+frontend framework — vanilla HTML/CSS/JS, per this phase's "avoid a heavy
+frontend framework unless clearly necessary") served by FastAPI's
+`StaticFiles(html=True)`, mounted at `/` *after* the API routes so they
+take precedence. Includes: HR Compass AI branding and a live status strip
+(MCP/RAG/LLM, from `/health`, colored dots); a scrollable message history
+for the session; a "thinking" loading state while `/chat` is in flight;
+each assistant message rendered with its answer text, a citation-chip row
+(click to expand the snippet), and a collapsible "Agent Activity" panel
+showing that turn's operational trace (tool name, arguments, status,
+summary, escalation — never chain-of-thought, since none of that
+information exists in the trace to begin with); a visible "Clarification
+needed" badge when `requires_clarification` is set; a visible
+"Confirmation needed" badge plus quick Yes/No reply buttons when
+`requires_confirmation` is set; an "Escalated" badge when applicable; and
+a sidebar of the assignment's example prompts (Section 6.9's two demo
+workflows plus the other required behaviors) as one-click starters, useful
+both for manual testing and for a screen recording. Built with CSS flexbox
+and a single narrow-viewport media query so it stays usable at typical
+laptop-recording resolutions.
+
+## 8. Testing
+
+`pytest` (131 tests total, all passing).
 
 ### Phase 1 (38 tests, well under a second, fully offline)
 
@@ -631,49 +955,79 @@ automated test prove real MCP tool discovery/calling through the protocol.
   (`EMP-1003`) cases, asserting the exact tool-call sequence, that the
   final result is citation-bearing, and that evidence spans **at least two
   distinct policy documents** for the remote-work cases.
+- `test_compliance_rules.py` — 21 unit-level regression tests for the
+  calendar-day/business-day thresholds fixed in Section 6.10, run directly
+  against `mcp_server.compliance` (no MCP protocol overhead) so every
+  boundary can be checked exhaustively and fast.
 
-## 8. Remaining Work (Phase 3+)
+### Phase 3 (28 tests)
+
+- `test_agent_orchestrator.py` (17 tests) — the required behaviors A-J
+  from this phase's instructions, each run against a real MCP server
+  subprocess with a `FakeLLMProvider` scripted to make a *different* tool
+  (or no-tool) decision per test, proving the loop is genuinely
+  model-driven (Section 7.3): policy-only (no employee lookup), the PTO
+  workflow (dynamic multi-tool), remote work interstate and international
+  (multi-document evidence + escalation), a benefits lookup, an ambiguous
+  request (`CLARIFY:`, no tool calls), a missing employee ID, an invalid
+  employee ID (the real MCP error is fed back to the model, not
+  fabricated), an out-of-corpus question (asserts the actual tool result
+  the model received had `has_sufficient_evidence: false`), a sensitive
+  workplace issue (grounded + `CONFIRM:`, ticket never created without
+  it), the code-enforced confirmation gate in both directions (Section
+  7.6), `draft_hr_email` never claiming to have sent anything, the max-
+  iteration cap, a hallucinated/unknown tool name handled gracefully, and
+  citation propagation.
+- `test_api.py` (11 tests) — `/health`'s exact shape and that it never
+  includes a secret value; `/api/tools` lists all 8 required tools;
+  request validation (empty message -> `422`); `/chat` without
+  `GROQ_API_KEY` configured -> clean `503`; the happy path (`FakeLLMProvider`
+  injected via `app.dependency_overrides`) returning answer/citations/
+  trace; citations shaped correctly; a conversation continuing across two
+  `/chat` calls via `conversation_id`; `requires_confirmation` surfacing
+  correctly; an `LLMProviderError` inside the agent loop degrading
+  gracefully to a `200` rather than crashing (the orchestrator already
+  catches it); a genuinely unexpected exception still reaching the client
+  only as a clean, generic `500` (no traceback, no exception class name)
+  via the global handler; and the root page serving the chat UI with its
+  required elements present.
+
+## 9. Remaining Work (Phase 4+)
 
 Not yet implemented, per `PROJECT_SPEC.md` and `docs/acceptance-checklist.md`:
 
-- Agent orchestrator: intent routing (RAG-only vs. tool-required vs.
-  multi-step workflow vs. ambiguous vs. out-of-scope), tool selection via
-  the now-existing MCP client, response synthesis, and a concise
-  operational trace (tool name, arguments, result summary, retrieved
-  sources, escalation/confirmation decisions) with no exposed
-  chain-of-thought — `core.trace.TraceRecorder` already exists and is used
-  by Phase 2's proof scripts; the agent will use the same model instead of
-  a hard-coded call sequence.
-- The two end-to-end demo workflows (PTO, remote work) wired through the
-  agent and MCP tools, using the demo employees above.
-- Web chat UI with `/chat` and `/health` endpoints.
 - GitHub Actions CI (install, import/build check, tests, MCP
   discovery/tool-call test) gating deployment; free-tier deployment
-  (Render or equivalent).
+  (Render or equivalent); `deployed.md` filled in once deployed.
 - Evaluation harness: 20-30 cases with gold answers/rubrics; groundedness,
   citation accuracy, tool-selection accuracy, workflow completion,
   clarification/escalation accuracy, action-safety pass rate, p50/p95
-  latency; at least one ablation. A natural first ablation, given Phase 1's
-  design, is **hashing vs. fastembed retrieval quality** on the same query
-  set, since both backends already share one interface end-to-end.
-- `deployed.md` filled in once deployed.
+  latency; at least one ablation. Two natural ablations are already set up
+  by this phase's design and need only be run and written up: **hashing
+  vs. fastembed retrieval quality** (both backends share one interface
+  end-to-end since Phase 1), and comparing agent behavior/latency with the
+  code-enforced confirmation gate (Section 7.6) on vs. off.
+- A recorded 7-10 minute demo covering both required workflows through the
+  real UI/agent, MCP tool names/arguments/outputs, citations, architecture,
+  deployment, and CI/CD.
 
-## 9. Decisions the student/user may want to weigh in on for Phase 3
+## 10. Decisions the student/user may want to weigh in on for Phase 4
 
-- **LLM provider**: `.env.example` leaves `LLM_PROVIDER`/`LLM_MODEL` blank.
-  A free-tier-friendly option should be chosen before the agent
-  orchestrator is built (this affects cost and latency evaluation).
-- **Chat UI**: CLAUDE.md allows either a Streamlit UI or a minimal
-  FastAPI-served frontend; the latter yields a single-service deployment,
-  which is simpler for a free-tier host.
+- **Groq model choice**: `GROQ_MODEL` defaults to a current Llama 3.3
+  tool-calling-capable model (`llm/groq_provider.py`) but is fully
+  overridable; worth confirming against Groq's current free-tier model
+  list and rate limits before the recorded demo and before running the
+  evaluation harness (affects both quality and p50/p95 latency numbers).
+- **Chat UI**: this phase used a minimal FastAPI-served frontend (no
+  Streamlit) since it yields a single-service deployment, simpler for a
+  free-tier host, per CLAUDE.md's stated preference for that outcome.
+  Confirm this is still the preferred direction before deployment.
+- **`ConversationStore` at scale**: explicitly documented as in-memory,
+  single-process, ephemeral (Section 7.7) — fine for this project's scope;
+  would need a real shared store before a multi-worker deployment.
 - **MCP transport for deployment**: stdio (Section 6.1) works well when
-  the agent process spawns the MCP server as a child process, which is the
-  simplest option for a single free-tier web service. If the agent and
-  chat UI ever need to run as genuinely separate deployed services, that
-  would call for switching to the SDK's HTTP/SSE transport instead —
-  worth confirming once the Phase 3 deployment topology is chosen.
-- **`check_policy_compliance`'s calendar/business-day approximation**
-  (Section 6.5, point 2): acceptable as a documented simplification for
-  Phase 2's proof scripts, but worth deciding whether Phase 3's agent
-  should compute exact calendar-day thresholds from an actual date input
-  instead of relying on a caller-supplied `duration_business_days`.
+  the FastAPI process spawns the MCP server as a child process, which is
+  the simplest option for a single free-tier web service and is what's
+  implemented. If the agent and chat UI ever need to run as genuinely
+  separate deployed services, that would call for the SDK's HTTP/SSE
+  transport instead.

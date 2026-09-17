@@ -114,7 +114,7 @@ async def run_remote_work_workflow(
     employee_id: str,
     destination_state: str | None = None,
     destination_country: str | None = None,
-    duration_business_days: int = 30,
+    duration_calendar_days: int = 42,  # "six weeks" (the demo scenario's own wording)
 ) -> tuple[list[dict], dict]:
     """Workflow B: lookup_employee_profile -> search_policy_documents
     (remote work) -> search_policy_documents (work location/tax) ->
@@ -157,7 +157,7 @@ async def run_remote_work_workflow(
         "scenario_type": "remote_work_request",
         "destination_state": destination_state,
         "destination_country": destination_country,
-        "duration_business_days": duration_business_days,
+        "duration_calendar_days": duration_calendar_days,
     }
     compliance = await _call(client, trace, "check_policy_compliance", compliance_args)
     trace.record_tool_call(

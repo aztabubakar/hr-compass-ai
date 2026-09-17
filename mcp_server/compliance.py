@@ -27,9 +27,19 @@ arbitrary HR questions. It accepts a small, fixed set of typed scenario
 inputs (see `mcp_server.tools.check_policy_compliance`'s signature) and
 returns a rule-table lookup. Interpreting a free-form employee question
 into these structured inputs, and turning a `ComplianceResult` into
-prose, is explicitly deferred to the future LLM agent (Phase 3) — see
-`design-and-evaluation.md`'s MCP Architecture section, "Facts vs. rules vs.
-future LLM interpretation."
+prose, is the LLM agent's job (`agent/`) — this module never sees the
+user's original wording.
+
+**Units.** Every threshold here uses the exact unit the policy corpus
+itself states it in: POL-LOC-001 Section 4's interstate 30/90-day tiers
+are evaluated directly against a real calendar-day duration
+(`duration_calendar_days`); POL-RWK-001 Section 6's 20-business-day "Work
+From Anywhere" allowance and POL-LOC-001 Section 6's 30-business-day
+international allowance are evaluated against a business-day count
+derived from that same calendar-day input via `calendar_to_business_days`,
+since those two provisions are themselves defined in business days by the
+policy text. No unit is silently approximated or reinterpreted; see
+`evaluate_remote_work_request`'s docstring for the exact tier logic.
 """
 from __future__ import annotations
 
@@ -48,18 +58,34 @@ PAYROLL_REGISTERED_STATES = {
 }
 # POL-LOC-001 Section 6 "International Remote Work".
 APPROVED_EOR_COUNTRIES = {"united kingdom", "uk", "canada", "portugal", "ireland"}
-# POL-RWK-001 Section 6 "Temporary Remote Work ('Work From Anywhere')".
+# POL-RWK-001 Section 6 "Temporary Remote Work ('Work From Anywhere')" — the
+# policy states this allowance in business days ("Up to 20 business days...").
 WORK_FROM_ANYWHERE_LIMIT_BUSINESS_DAYS = 20
-# POL-LOC-001 Section 6 "International Remote Work" (6 consecutive weeks).
+# POL-LOC-001 Section 6 "International Remote Work" — the policy states this
+# allowance in business days too ("6 consecutive weeks (30 business days)...
+# This 6-week allowance is measured in business days").
 INTERNATIONAL_ALLOWANCE_BUSINESS_DAYS = 30
-# Approximation of POL-LOC-001 Section 4's 90-*calendar*-day interstate
-# approval-tier boundary, expressed in business days for consistency with
-# the other duration inputs this tool accepts (~5 business days/week).
-# Documented simplification: the source policy's interstate thresholds are
-# in calendar days while this tool's `duration_business_days` input is not;
-# treating a full LLM-grade calendar/business-day reconciliation is left to
-# Phase 3, per this module's docstring.
-INTERSTATE_RELOCATION_TIER_BUSINESS_DAYS = 65
+# POL-LOC-001 Section 4 "Temporary Interstate Work" — these tiers are stated
+# by the policy in *calendar* days, not business days ("Up to 30 consecutive
+# calendar days...", "31 to 90 consecutive calendar days...", "More than 90
+# consecutive calendar days..."). Evaluated directly against calendar days
+# below; no business-day approximation is used for this threshold.
+INTERSTATE_NO_APPROVAL_CALENDAR_DAYS = 30
+INTERSTATE_PAYROLL_APPROVAL_CALENDAR_DAYS = 90
+
+# Calendar-to-business-day conversion, used *only* for the two allowances the
+# policy itself states in business days (WORK_FROM_ANYWHERE_LIMIT_BUSINESS_DAYS,
+# INTERNATIONAL_ALLOWANCE_BUSINESS_DAYS above) when the caller supplies a
+# real-world calendar-day duration. A standard 5-business-day/7-calendar-day
+# week is used, matching the policy's own stated equivalence ("6 consecutive
+# weeks (30 business days)" implies exactly 5 business days per 7 calendar
+# days: 6 * 7 = 42 calendar days, 6 * 5 = 30 business days).
+_BUSINESS_DAYS_PER_CALENDAR_WEEK = 5
+_CALENDAR_DAYS_PER_WEEK = 7
+
+
+def calendar_to_business_days(calendar_days: int) -> int:
+    return round(calendar_days * _BUSINESS_DAYS_PER_CALENDAR_WEEK / _CALENDAR_DAYS_PER_WEEK)
 
 
 @dataclass
@@ -161,8 +187,25 @@ def evaluate_pto_request(
 def evaluate_remote_work_request(
     destination_state: str | None,
     destination_country: str | None,
-    duration_business_days: int | None,
+    duration_calendar_days: int | None,
 ) -> RuleOutcome:
+    """Evaluate a remote-work request using each threshold's *own* unit as
+    the policy corpus literally states it:
+
+    - POL-LOC-001 Section 4 "Temporary Interstate Work": exact **calendar**
+      days (30 / 90).
+    - POL-LOC-001 Section 6 "International Remote Work" and POL-RWK-001
+      Section 6 "Work From Anywhere": **business** days (30 / 20), derived
+      from the caller's calendar-day input via `calendar_to_business_days`
+      only because those two provisions are themselves defined in business
+      days by the policy text.
+
+    `duration_calendar_days` is the single authoritative, real-world
+    duration input (e.g. "six weeks" = 42 calendar days) — see
+    design-and-evaluation.md's compliance-engine section for why a single
+    calendar-day input, rather than a caller-supplied business-day count,
+    avoids silently mixing units.
+    """
     is_international = bool(destination_country) and destination_country.strip().lower() not in (
         "", "us", "usa", "united states",
     )
@@ -179,24 +222,33 @@ def evaluate_remote_work_request(
                 ],
                 escalation_required=True,
             )
-        if duration_business_days is not None and duration_business_days > INTERNATIONAL_ALLOWANCE_BUSINESS_DAYS:
+        if duration_calendar_days is None:
+            return RuleOutcome(
+                status="insufficient_evidence",
+                reasons=["duration_calendar_days was not provided; cannot evaluate the "
+                         "30-business-day international allowance in POL-LOC-001 Section 6."],
+            )
+        business_days = calendar_to_business_days(duration_calendar_days)
+        if business_days > INTERNATIONAL_ALLOWANCE_BUSINESS_DAYS:
             return RuleOutcome(
                 status="non_compliant",
                 reasons=[
-                    f"Requested duration ({duration_business_days} business days) exceeds the "
-                    f"{INTERNATIONAL_ALLOWANCE_BUSINESS_DAYS}-business-day (6-week) annual "
-                    f"international remote work allowance for {destination_country} per "
-                    "POL-LOC-001 Section 6."
+                    f"Requested duration ({duration_calendar_days} calendar days ≈ {business_days} "
+                    f"business days) exceeds the {INTERNATIONAL_ALLOWANCE_BUSINESS_DAYS}-business-day "
+                    f"(6-week) annual international remote work allowance for {destination_country} "
+                    "per POL-LOC-001 Section 6."
                 ],
                 escalation_required=True,
             )
         return RuleOutcome(
             status="requires_approval",
             reasons=[
-                f"International remote work to {destination_country} (an approved "
-                "Employer-of-Record country) is within the 6-week/30-business-day allowance but "
-                "always requires Global Mobility review, at least 20 business days' notice, and a "
-                "signed International Remote Work Attestation per POL-LOC-001 Section 6."
+                f"International remote work to {destination_country} for {duration_calendar_days} "
+                f"calendar days (≈{business_days} business days) is within the "
+                f"{INTERNATIONAL_ALLOWANCE_BUSINESS_DAYS}-business-day (6-week) allowance for an "
+                "approved Employer-of-Record country, but always requires Global Mobility review, "
+                "at least 20 business days' notice, and a signed International Remote Work "
+                "Attestation per POL-LOC-001 Section 6."
             ],
             required_approvals=["Global Mobility review", "International Remote Work Attestation"],
             escalation_required=True,
@@ -210,36 +262,45 @@ def evaluate_remote_work_request(
                 reasons=[
                     f"'{destination_state}' is not currently a Solara Dynamics payroll-registered "
                     "state; per POL-LOC-001 Section 4/5 this is treated as a permanent relocation "
-                    "request requiring VP and Payroll approval and possibly new state registration."
+                    "request requiring VP and Payroll approval and possibly new state registration, "
+                    "regardless of duration."
                 ],
                 required_approvals=["VP approval", "Payroll registration review"],
                 escalation_required=True,
             )
-        if duration_business_days is None:
+        if duration_calendar_days is None:
             return RuleOutcome(
                 status="insufficient_evidence",
-                reasons=["duration_business_days was not provided; cannot determine which "
-                         "approval tier applies under POL-LOC-001 Section 4."],
+                reasons=["duration_calendar_days was not provided; cannot determine which "
+                         "calendar-day approval tier applies under POL-LOC-001 Section 4."],
             )
-        if duration_business_days <= WORK_FROM_ANYWHERE_LIMIT_BUSINESS_DAYS:
-            return RuleOutcome(
-                status="compliant",
-                reasons=[
-                    f"{duration_business_days} business days in {destination_state} (a "
-                    f"payroll-registered state) is within the "
-                    f"{WORK_FROM_ANYWHERE_LIMIT_BUSINESS_DAYS}-business-day 'Work From Anywhere' "
-                    "allowance per POL-RWK-001 Section 6; manager notice in Compass HR is "
-                    "sufficient."
-                ],
-            )
-        if duration_business_days <= INTERSTATE_RELOCATION_TIER_BUSINESS_DAYS:
+        if duration_calendar_days <= INTERSTATE_NO_APPROVAL_CALENDAR_DAYS:
+            business_days = calendar_to_business_days(duration_calendar_days)
+            reasons = [
+                f"{duration_calendar_days} calendar days in {destination_state} (a "
+                f"payroll-registered state) is within the "
+                f"{INTERSTATE_NO_APPROVAL_CALENDAR_DAYS}-calendar-day threshold in POL-LOC-001 "
+                "Section 4; manager notice in Compass HR is sufficient and no additional "
+                "approval is required."
+            ]
+            if business_days > WORK_FROM_ANYWHERE_LIMIT_BUSINESS_DAYS:
+                reasons.append(
+                    f"Note: at ≈{business_days} business days this also exceeds POL-RWK-001 "
+                    f"Section 6's {WORK_FROM_ANYWHERE_LIMIT_BUSINESS_DAYS}-business-day 'Work From "
+                    "Anywhere' allowance, so it must be routed as a Work Location Change Request "
+                    "under POL-LOC-001 rather than informal manager notice alone — but per POL-LOC-001 "
+                    "Section 4 this still requires no additional approval beyond that request."
+                )
+            return RuleOutcome(status="compliant", reasons=reasons)
+        if duration_calendar_days <= INTERSTATE_PAYROLL_APPROVAL_CALENDAR_DAYS:
             return RuleOutcome(
                 status="requires_approval",
                 reasons=[
-                    f"{duration_business_days} business days in {destination_state} exceeds the "
-                    f"{WORK_FROM_ANYWHERE_LIMIT_BUSINESS_DAYS}-business-day no-approval allowance; "
+                    f"{duration_calendar_days} calendar days in {destination_state} exceeds the "
+                    f"{INTERSTATE_NO_APPROVAL_CALENDAR_DAYS}-calendar-day no-approval threshold; "
                     "Payroll and People & Culture Team approval is required at least 15 business "
-                    "days in advance per POL-LOC-001 Section 4."
+                    f"days in advance per POL-LOC-001 Section 4 (the "
+                    f"{INTERSTATE_NO_APPROVAL_CALENDAR_DAYS + 1}-to-{INTERSTATE_PAYROLL_APPROVAL_CALENDAR_DAYS}-calendar-day tier)."
                 ],
                 required_approvals=["Payroll approval", "People & Culture Team approval"],
                 escalation_required=True,
@@ -247,9 +308,10 @@ def evaluate_remote_work_request(
         return RuleOutcome(
             status="requires_approval",
             reasons=[
-                f"{duration_business_days} business days in {destination_state} is long enough to "
-                "be treated as a permanent relocation request per POL-LOC-001 Section 4/5, "
-                "requiring VP and People & Culture Team approval."
+                f"{duration_calendar_days} calendar days in {destination_state} exceeds "
+                f"{INTERSTATE_PAYROLL_APPROVAL_CALENDAR_DAYS} calendar days, so per POL-LOC-001 "
+                "Section 4/5 this is treated as a permanent relocation request requiring VP and "
+                "People & Culture Team approval, not temporary work."
             ],
             required_approvals=["VP approval", "People & Culture Team approval"],
             escalation_required=True,

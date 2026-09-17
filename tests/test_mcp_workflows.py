@@ -54,7 +54,7 @@ def test_remote_work_workflow_interstate_gathers_multi_document_evidence(
     async def body():
         async with MCPClient(env=mcp_server_env) as client:
             return await run_remote_work_workflow(
-                client, "EMP-1002", destination_state="Colorado", duration_business_days=30
+                client, "EMP-1002", destination_state="Colorado", duration_calendar_days=42
             )
 
     trace, compliance = anyio.run(body)
@@ -84,7 +84,7 @@ def test_remote_work_workflow_international_gathers_multi_document_evidence(
     async def body():
         async with MCPClient(env=mcp_server_env) as client:
             return await run_remote_work_workflow(
-                client, "EMP-1003", destination_country="Portugal", duration_business_days=30
+                client, "EMP-1003", destination_country="Portugal", duration_calendar_days=42
             )
 
     trace, compliance = anyio.run(body)
@@ -103,7 +103,7 @@ def test_remote_work_workflow_unsupported_country_is_non_compliant(mcp_server_en
     async def body():
         async with MCPClient(env=mcp_server_env) as client:
             return await run_remote_work_workflow(
-                client, "EMP-1003", destination_country="Thailand", duration_business_days=30
+                client, "EMP-1003", destination_country="Thailand", duration_calendar_days=42
             )
 
     _trace, compliance = anyio.run(body)

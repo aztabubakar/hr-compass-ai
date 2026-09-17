@@ -90,3 +90,81 @@ Retained by the student: confirming the deterministic compliance
 thresholds match the intended policy interpretation, and deciding the
 Phase 3 items flagged in design-and-evaluation.md Section 9 (LLM provider,
 chat UI framework, deployment topology).
+
+### Phase 3 — LLM agent + web application
+
+Delegated to Claude Code: fixing a known simplification from Phase 2 (the
+remote-work compliance check compared duration in business days even where
+Solara's own policy text states thresholds in calendar days) by re-reading
+the literal policy wording and rewriting `mcp_server/compliance.py` to use
+exact calendar-day comparisons for the calendar-day-defined tiers, with a
+business-day conversion applied only where the policy itself states a
+business-day threshold; a provider-agnostic `LLMProvider` abstraction
+(`llm/`) with a Groq implementation over the OpenAI-compatible `openai`
+SDK and a scripted `FakeLLMProvider` for offline tests; an `AgentOrchestrator`
+(`agent/orchestrator.py`) that discovers MCP tools through the real MCP
+client (no direct imports of tool implementations), runs a bounded
+LLM-driven tool-calling loop, and returns a structured `AgentResponse`
+(answer, citations, snippets, trace, clarification/confirmation/escalation
+flags); a versioned system prompt (`agent/prompts.py`); a FastAPI
+application (`app/`) exposing `/health`, `/chat`, and `/api/tools`, with
+ephemeral in-memory conversation state; a static HTML/CSS/JS chat UI
+(`app/static/index.html`) showing citations, retrieved snippets, and a
+collapsible operational-trace panel; a manual `scripts/agent_smoke_test.py`
+for live Groq verification (not run in CI); and 28 new automated tests
+covering the compliance boundary fix, agentic tool selection across the
+required behavior scenarios, and the API layer.
+
+What worked well: the orchestrator contains no topic-specific branching —
+tool sequencing is driven entirely by whatever the LLM (real or scripted)
+decides to call, which the agent-orchestrator tests verify directly by
+scripting different tool sequences per scenario (policy-only, PTO,
+interstate remote work, international remote work, benefits, ambiguous
+request, missing/invalid employee ID, out-of-corpus question) and asserting
+the orchestrator faithfully executes each without any scenario-specific
+code path. The confirmation-gating design (a code-level check in the
+orchestrator, not just a prompt instruction, that downgrades a premature
+`confirmed=true` call on `create_mock_hr_ticket` back to `confirmed=false`
+unless the prior turn actually asked for confirmation) worked as intended
+and is covered by tests in both directions. Citations are compiled only
+from real MCP tool results, never parsed from model text, so they cannot
+be fabricated by construction.
+
+What required a mid-implementation fix or human review: a real bug in the
+tool-call loop, found through code review rather than a failing test — the
+first version wrapped an entire batch of tool calls in one try/except,
+so a single failing call would skip the required per-call "tool" role
+responses for the remaining calls in that batch and corrupt the
+OpenAI-format conversation on the next turn; fixed by moving the
+try/except inside the loop, per call. A genuine production bug was also
+found via a failing test: `app/main.py`'s `/health` endpoint originally read
+`RagConfig().index_dir`, but `RagConfig` is a frozen dataclass whose field
+defaults are computed once at module import time, so it never reflected
+`RAG_INDEX_DIR` overrides set later (e.g. by tests, or by any process that
+sets the env var after import); fixed to read `os.getenv("RAG_INDEX_DIR", ...)`
+directly at call time. Two other test-only issues were found and fixed:
+a FastAPI dependency-resolution-order case where a 503 from the
+LLM-not-configured dependency preempted an expected 422 validation error
+(fixed by giving that test a configured fake LLM so only the validation
+path was exercised), and a `TestClient` default (`raise_server_exceptions=True`)
+that re-raised an unhandled exception into the test process instead of
+letting the app's global exception handler convert it to a clean 500
+(fixed by setting `raise_server_exceptions=False` to observe
+production-like behavior). All four fixes were self-diagnosed and
+self-verified against the test suite; no human was available to review
+them during this session.
+
+No live Groq testing was performed in this phase: no `GROQ_API_KEY` was
+available in this development environment. `scripts/agent_smoke_test.py`
+was written and exercised only for its no-key exit path (printing setup
+guidance and returning cleanly); the automated test suite exercises the
+agent orchestrator exclusively through `FakeLLMProvider`. This is stated
+here explicitly rather than implied otherwise.
+
+Retained by the student: obtaining a Groq API key and running the live
+smoke test before relying on this system for a real demo; reviewing the
+system prompt (`agent/prompts.py`) for tone and scope before any
+recording; and deciding the Phase 4 items flagged in
+design-and-evaluation.md Section 10 (deployment to Render, any additional
+LLM provider, authentication/multi-tenancy if ever needed beyond a course
+demo).

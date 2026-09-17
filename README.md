@@ -5,12 +5,14 @@ built for the Quantic **AI Engineering Techniques and Architectures**
 project. See `PROJECT_SPEC.md` for the authoritative assignment
 requirements and `docs/architecture.md` for the target system design.
 
-**Project status: Phase 2 — MCP tool layer.** Phase 1 delivered the policy
-corpus, synthetic HR datasets, and RAG pipeline. Phase 2 adds a real MCP
-server (8 tools) and MCP client, wired to the Phase 1 RAG/data modules, plus
-deterministic tool-level proof scripts for the two required demo workflows.
-The LLM agent orchestrator, chat UI, CI/CD, deployment, and evaluation
-harness are **not yet implemented** — see "Remaining work" below and
+**Project status: Phase 3 — LLM agent + web app.** Phase 1 delivered the
+policy corpus, synthetic HR datasets, and RAG pipeline. Phase 2 added a real
+MCP server (8 tools) and MCP client. Phase 3 adds a real LLM-driven agent
+(Groq by default) that dynamically discovers and calls those MCP tools —
+choosing which ones and in what order itself, not from a hard-coded
+sequence — plus a FastAPI web app (`/health`, `/chat`, `/api/tools`) and a
+browser chat UI. CI/CD, free-tier deployment, and the evaluation harness are
+**not yet implemented** — see "Remaining work" below and
 `design-and-evaluation.md` for the full plan.
 
 ## The company
@@ -38,10 +40,12 @@ core/              Shared, dependency-light utilities (paths, operational trace 
 rag/               RAG ingestion + retrieval pipeline (Phase 1)
 mcp_server/        MCP server: 8 tools wrapping rag/ + mock_data/ (Phase 2)
 mcp_client/        Async MCP client (Phase 2)
-scripts/           Deterministic tool-level demo workflows + smoke test (Phase 2)
+llm/               Provider-agnostic LLM abstraction (Groq default, FakeLLMProvider for tests) (Phase 3)
+agent/             LLM agent orchestrator: bounded tool-calling loop, prompts, structured output (Phase 3)
+app/               FastAPI web app (/health, /chat, /api/tools) + browser chat UI (Phase 3)
+scripts/           Deterministic tool-level demo workflows, MCP/agent smoke tests (Phase 2/3)
 mcp/               MCP docs pointer only — see mcp/README.md for why the code lives in mcp_server/mcp_client
-agent/             LLM agent orchestrator (Phase 3, not yet implemented)
-evaluation/        Evaluation harness and cases (Phase 3)
+evaluation/        Evaluation harness and cases (Phase 4, not yet implemented)
 tests/             Automated tests (pytest)
 docs/              Architecture and acceptance-checklist reference docs
 ```
@@ -188,18 +192,100 @@ as you'd expect.
 ### Run the two deterministic demo workflows
 
 These prove the MCP tool layer supports both required workflows with real,
-citation-bearing tool calls — no LLM agent yet (that's Phase 3); the tool
-call sequence is hard-coded in `scripts/demo_workflows.py`.
+citation-bearing tool calls, independent of the LLM agent; the tool call
+sequence is hard-coded in `scripts/demo_workflows.py` on purpose, as a
+tool-layer smoke test and a source of fixtures — the deployed agent below
+does **not** use this hard-coded sequence; it decides its own.
 
 ```bash
 python -m scripts.run_pto_demo                # EMP-1001, 3 days (happy path)
 python -m scripts.run_pto_demo EMP-1009 3 2    # edge case: insufficient balance
-python -m scripts.run_remote_work_demo         # EMP-1002 (interstate) and EMP-1003 (international)
+python -m scripts.run_remote_work_demo         # EMP-1002 (interstate) and EMP-1003 (international), six weeks
 ```
 
 Each prints a JSON operational trace (see `core/trace.py`) and the final
 `check_policy_compliance` result, including policy citations spanning
 multiple documents for the remote-work case.
+
+## Configuring the LLM (Groq)
+
+The agent needs a real LLM to run. This project uses [Groq](https://groq.com)
+by default (a free-tier-friendly, fast inference provider) via a thin
+provider abstraction (`llm/`) designed so another OpenAI-compatible
+provider can be added later without touching `agent/`.
+
+```bash
+# 1. Get a free API key: https://console.groq.com/keys
+# 2. Copy .env.example to .env and set:
+GROQ_API_KEY=your-key-here
+# GROQ_MODEL is optional; a sensible current default is used if unset.
+```
+
+Without `GROQ_API_KEY` set, the app still starts and `/health` still works
+(`llm_configured: false`); `/chat` returns a clean `503` instead of
+crashing. The automated test suite never needs a real key — it always uses
+`llm.fake_provider.FakeLLMProvider`, a deterministic scripted stand-in (see
+"Running tests" below).
+
+## Running the web app
+
+```bash
+python -m rag.ingest              # build the RAG index, if you haven't yet
+uvicorn app.main:app --reload
+```
+
+Then open <http://localhost:8000> for the chat UI. The MCP server is
+launched and connected automatically when the app starts (one shared,
+long-lived subprocess — see `app/main.py`'s `lifespan()`), and closed when
+the app shuts down; you do not need to start `mcp_server.server` yourself.
+
+Endpoints:
+
+- `GET /health` — `{"status": "ok", "mcp": "connected"|"unavailable", "rag": "ok"|"not_built", "llm_configured": true|false}`.
+- `POST /chat` — `{"message": "...", "conversation_id": "...?"}` -> answer, citations, snippets, operational trace, clarification/confirmation/escalation flags, and the `conversation_id` to continue the conversation.
+- `GET /api/tools` — the discovered MCP tools and their input schemas (debugging/demo use).
+
+### Example demo prompts
+
+Try these in the chat UI (also listed there as clickable examples):
+
+- *"What is Solara's paid holiday policy?"* — policy-only, grounded, no employee lookup.
+- *"My employee ID is EMP-1001. Can I take three days of PTO next week?"* — PTO workflow.
+- *"I'm EMP-1002. Can I work from Colorado for six weeks?"* — remote work, interstate.
+- *"I'm EMP-1003. Can I work from Portugal for six weeks?"* — remote work, international.
+- *"EMP-1004 — am I enrolled in medical benefits?"* — structured-data lookup.
+- *"Can I work somewhere else next month?"* — ambiguous; the agent asks a clarifying question.
+- *"How much PTO do I have?"* — missing employee ID; the agent asks for it.
+- *"What is the company's stock option vesting schedule?"* — out-of-corpus; the agent says so rather than guessing.
+- *"I want to report harassment by a coworker."* — sensitive issue; grounded reporting guidance, offers (does not create) a mock HR case.
+
+## Manual smoke tests (not part of the automated suite)
+
+```bash
+python -m scripts.mcp_smoke_test      # MCP discovery + one real tool call over stdio
+python -m scripts.agent_smoke_test    # live agent test: real Groq call, needs GROQ_API_KEY
+```
+
+`agent_smoke_test` prints setup guidance and exits cleanly (code 0) if
+`GROQ_API_KEY` isn't set, rather than failing — it's meant for a human to
+run locally to sanity-check the live path, and is never run in CI.
+`mcp_smoke_test` needs no API key; example output:
+
+```
+Discovered 8 tools:
+
+- search_policy_documents: Search the Solara Dynamics policy corpus and return ranked, citable evidence...
+    input_schema: {"properties": {"query": {...}, "top_k": {...}, "document_id": {...}}, ...}
+- get_policy_section: ...
+...
+
+Calling lookup_employee_profile(employee_id='EMP-1001')...
+{
+  "employee_id": "EMP-1001",
+  "full_name": "Jordan Vance",
+  ...
+}
+```
 
 ## Running tests
 
@@ -207,26 +293,33 @@ multiple documents for the remote-work case.
 pytest
 ```
 
-82 tests: the 38 from Phase 1 (policy parsing, chunking, vector store,
-retrieval, HR data integrity) plus 44 from Phase 2 covering the MCP server,
-client, all 8 tools (through the real protocol), and both demo workflows.
-The suite is fully offline and deterministic — it builds a real index over
+131 tests: 38 from Phase 1 (policy parsing, chunking, vector store,
+retrieval, HR data integrity), 65 from Phase 2 (44 covering the MCP server/
+client/all 8 tools/both demo workflows through the real protocol, plus 21
+new compliance-engine boundary regression tests — see "Exact calendar-day
+compliance fix" in `design-and-evaluation.md`), and 28 from Phase 3 (17
+agent-orchestration tests proving genuine model-driven tool selection for
+every required behavior, plus 11 FastAPI endpoint tests).
+
+The suite is fully offline and deterministic: it builds a real index over
 the actual Solara Dynamics corpus once per session using the hashing
-embedding backend (never fastembed/network), and every MCP test spawns a
-genuine `mcp_server.server` subprocess over stdio rather than calling tool
-functions in-process, so at least one test proves real MCP discovery and
-invocation through the protocol as required. Expect the full run to take
-roughly 45-60 seconds due to the ~20 subprocess spins. A `network` pytest
-marker is reserved for an opt-in test that exercises the real `fastembed`
-model download; it is excluded by default (see `pytest.ini`) since this
-project's build/CI environment cannot always reach Hugging Face.
+embedding backend (never fastembed/network), every MCP-level test spawns a
+genuine `mcp_server.server` subprocess over stdio, and every agent-level
+test uses `llm.fake_provider.FakeLLMProvider` — never a real Groq call — so
+the whole suite needs no API key and no network access beyond what was
+already true in Phase 2. Expect the full run to take roughly 60-80 seconds,
+mostly subprocess spin-up time. A `network` pytest marker is reserved for
+an opt-in test that exercises the real `fastembed` model download; it is
+excluded by default (see `pytest.ini`) since this project's build/CI
+environment cannot always reach Hugging Face.
 
 ## Demo employees (for the two required workflows)
 
 The synthetic dataset in `mock_data/` includes employees deliberately set
-up to exercise the assignment's two required demo workflows, already
-provable at the MCP tool level today (see "Run the two deterministic demo
-workflows" above) and to be driven by an LLM agent in Phase 3:
+up to exercise the assignment's two required demo workflows — provable both
+at the MCP tool level (see "Run the two deterministic demo workflows"
+above) and end-to-end through the real LLM agent (see "Example demo
+prompts" above):
 
 - **PTO workflow** ("Can I take three days of PTO next week?"):
   `EMP-1001` (Jordan Vance) has an ample PTO balance (happy path);
@@ -242,16 +335,16 @@ workflows" above) and to be driven by an LLM agent in Phase 3:
 See `design-and-evaluation.md` for the full roster and the policy
 thresholds these scenarios are designed to exercise.
 
-## Remaining work (Phase 3+)
+## Remaining work (Phase 4+)
 
-Not yet implemented, per `PROJECT_SPEC.md`: the LLM agent orchestrator
-(choosing which MCP tools to call and synthesizing a final natural-language
-answer — Phase 2 proves the tool layer works with a hard-coded call
-sequence, not an agent's decisions), web chat UI (`/chat`, `/health`),
-CI/CD (GitHub Actions), free-tier deployment, and the 20-30 case evaluation
-harness with groundedness/citation/tool-selection/safety metrics and an
-ablation. See `design-and-evaluation.md` "Remaining Work" for the detailed
-plan.
+Not yet implemented, per `PROJECT_SPEC.md`: CI/CD (GitHub Actions —
+dependency install, import/build check, tests, MCP discovery/tool-call
+test, gating deployment), free-tier deployment (Render or equivalent;
+`deployed.md` will be filled in once live), and the 20-30 case evaluation
+harness with groundedness/citation/tool-selection/workflow-completion/
+clarification-escalation/action-safety/p50-p95-latency metrics and at
+least one ablation. See `design-and-evaluation.md` "Remaining Work" for the
+detailed plan.
 
 ## AI tooling
 

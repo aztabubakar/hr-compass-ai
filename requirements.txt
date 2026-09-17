@@ -9,25 +9,30 @@
 #   CUDA/nvidia dependency chain (observed: ~5.9GB installed) unless a special CPU-only package
 #   index is used. fastembed serves the SAME model referenced in .env.example
 #   (sentence-transformers/all-MiniLM-L6-v2) as a small int8-quantized ONNX export, giving
-#   equivalent 384-dim embeddings with a CPU-only, ~350MB install footprint total — materially
-#   more reliable for a free-tier host (e.g. Render's 512MB RAM tier). This is a documented
-#   deviation permitted by CLAUDE.md ("do not blindly follow these preferences if
-#   package/runtime compatibility makes another free-tier-friendly design materially more
-#   reliable").
+#   equivalent 384-dim embeddings with a CPU-only, small install footprint — materially more
+#   reliable for a free-tier host (e.g. Render's 512MB RAM tier). Documented deviation, permitted
+#   by CLAUDE.md ("do not blindly follow these preferences if package/runtime compatibility
+#   makes another free-tier-friendly design materially more reliable").
 # - beautifulsoup4 / lxml: HTML policy document parsing.
 # - pypdf: PDF policy document text extraction.
 # - fpdf2: generates the synthetic PDF policy documents for the corpus (build-time only).
 # - python-dotenv: loads .env for local configuration.
-# - pydantic: typed, validated config and synthetic-data models.
+# - pydantic: typed, validated config, synthetic-data, agent I/O, and API models.
 # - pytest: automated tests.
 # - mcp: the official Model Context Protocol Python SDK. Used for both the MCP server
 #   (mcp_server/, `mcp.server.mcpserver.MCPServer`) and the MCP client (mcp_client/,
 #   `mcp.ClientSession` + `mcp.client.stdio`) over stdio transport. Pulls in a small ASGI stack
 #   (starlette/uvicorn/sse-starlette) that the SDK itself needs for its HTTP/SSE transports,
 #   which this project does not use (stdio only) but does not attempt to strip out, since it
-#   adds only ~15MB and keeps the dependency install exactly what `pip install mcp` gives.
-# - anyio: structured-concurrency runtime used directly by the MCP client/server code
-#   (`anyio.run(...)`) and transitively required by `mcp` and `fastembed`.
+#   adds only a small amount and keeps the dependency install exactly what `pip install mcp` gives.
+# - anyio: structured-concurrency runtime used directly by the MCP client/server and agent
+#   orchestrator code (`anyio.run(...)`), and transitively required by `mcp` and `fastembed`.
+# - openai: the official OpenAI Python SDK, used as a thin, OpenAI-compatible HTTP client for
+#   Groq (this project's primary LLM provider) rather than a Groq-specific SDK. Groq (and most
+#   other free/low-cost inference providers) expose an OpenAI-compatible chat completions API,
+#   so this same client, pointed at a different `base_url`, is the natural way to add another
+#   provider later (see llm/groq_provider.py's module docstring).
+# - fastapi / uvicorn[standard]: the web API (/health, /chat, /api/tools) and ASGI server.
 
 numpy==2.4.6
 faiss-cpu==1.15.1
@@ -41,11 +46,15 @@ pydantic==2.13.5
 pytest==9.1.1
 mcp==2.2.0
 anyio==4.15.1
+openai==3.14.1
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
 
 # --- Transitive pins captured for reproducibility (do not import directly) ---
 PyJWT==2.14.0
 PyYAML==6.0.3
 Pygments==2.21.0
+annotated-doc==0.0.5
 annotated-types==0.8.0
 attrs==26.1.0
 certifi==2026.7.22
@@ -62,11 +71,13 @@ h11==0.16.0
 hf-xet==1.6.0
 httpcore==1.0.9
 httpcore2==2.13.0
+httptools==0.8.0
 httpx==0.28.1
 httpx2==2.13.0
 huggingface_hub==1.31.0
 idna==3.19
 iniconfig==2.3.0
+jiter==0.17.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 loguru==0.7.3
@@ -85,6 +96,7 @@ python-multipart==0.0.32
 referencing==0.37.0
 requests==2.34.2
 rpds-py==2026.6.3
+sniffio==1.3.1
 soupsieve==2.9.2
 sse-starlette==3.4.11
 starlette==1.6.0
@@ -94,9 +106,6 @@ truststore==0.10.4
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 urllib3==2.8.0
-uvicorn==0.53.0
-
-# --- Phase 3 (planned; not yet installed/used) ---
-# fastapi                 # /chat, /health web API
-# jinja2 or streamlit     # chat UI (final choice documented when implemented)
-# an LLM provider SDK (choice documented once selected, see design-and-evaluation.md Section 8)
+uvloop==0.22.1
+watchfiles==1.2.0
+websockets==17.1
