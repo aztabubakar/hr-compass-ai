@@ -1,2 +1,12 @@
 # Policy Corpus
-Claude Code will author a coherent synthetic policy corpus for the hypothetical company. Target 5–20 documents and roughly 30–120 pages total. Cover PTO, holidays, remote work, expenses, data security, benefits, onboarding, equipment, leave, workplace conduct, travel, and work-location/tax approval. Include stable document IDs, titles, effective dates, section headings, and policy text suitable for citations.
+
+**Status: implemented (Phase 1).** 12 documents for the fictional company
+Solara Dynamics, Inc., totaling 37 pages (see `design-and-evaluation.md`
+Section 3 for the full list, format breakdown, and page-count methodology).
+
+- `content.py` — canonical policy text (single source of truth).
+- `generate_corpus.py` — renders `content.py` into the actual `.md`/`.html`/`.pdf`
+  files in this directory. Run `python -m policies.generate_corpus` after
+  editing `content.py`.
+- `pol-*.md` / `pol-*.html` / `pol-*.pdf` — the generated corpus, parsed by
+  `rag/parsers.py`.

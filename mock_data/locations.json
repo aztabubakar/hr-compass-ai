@@ -1,0 +1,83 @@
+[
+  {
+    "location_id": "LOC-TX-AUS",
+    "city": "Austin",
+    "region": "Texas",
+    "country": "United States",
+    "country_code": "US",
+    "type": "hq_office",
+    "payroll_registered": true
+  },
+  {
+    "location_id": "LOC-CO-DEN",
+    "city": "Denver",
+    "region": "Colorado",
+    "country": "United States",
+    "country_code": "US",
+    "type": "office",
+    "payroll_registered": true
+  },
+  {
+    "location_id": "LOC-NC-RAL",
+    "city": "Raleigh",
+    "region": "North Carolina",
+    "country": "United States",
+    "country_code": "US",
+    "type": "office",
+    "payroll_registered": true
+  },
+  {
+    "location_id": "LOC-CA-REM",
+    "city": "San Diego",
+    "region": "California",
+    "country": "United States",
+    "country_code": "US",
+    "type": "remote",
+    "payroll_registered": true
+  },
+  {
+    "location_id": "LOC-NY-REM",
+    "city": "Albany",
+    "region": "New York",
+    "country": "United States",
+    "country_code": "US",
+    "type": "remote",
+    "payroll_registered": true
+  },
+  {
+    "location_id": "LOC-WA-REM",
+    "city": "Spokane",
+    "region": "Washington",
+    "country": "United States",
+    "country_code": "US",
+    "type": "remote",
+    "payroll_registered": true
+  },
+  {
+    "location_id": "LOC-IL-REM",
+    "city": "Springfield",
+    "region": "Illinois",
+    "country": "United States",
+    "country_code": "US",
+    "type": "remote",
+    "payroll_registered": true
+  },
+  {
+    "location_id": "LOC-GBR-LON",
+    "city": "London",
+    "region": null,
+    "country": "United Kingdom",
+    "country_code": "GB",
+    "type": "eor_international",
+    "payroll_registered": false
+  },
+  {
+    "location_id": "LOC-CAN-TOR",
+    "city": "Toronto",
+    "region": "Ontario",
+    "country": "Canada",
+    "country_code": "CA",
+    "type": "eor_international",
+    "payroll_registered": false
+  }
+]

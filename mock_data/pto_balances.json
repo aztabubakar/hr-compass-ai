@@ -1,0 +1,134 @@
+[
+  {
+    "employee_id": "EMP-1001",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 8.0,
+    "accrued_ytd_hours": 50.0,
+    "used_ytd_hours": 10.0,
+    "pending_hours": 0.0,
+    "balance_hours": 48.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1002",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 40.0,
+    "accrued_ytd_hours": 66.0,
+    "used_ytd_hours": 6.0,
+    "pending_hours": 0.0,
+    "balance_hours": 100.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1003",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 24.0,
+    "accrued_ytd_hours": 66.0,
+    "used_ytd_hours": 26.0,
+    "pending_hours": 0.0,
+    "balance_hours": 64.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1004",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 4.0,
+    "accrued_ytd_hours": 25.0,
+    "used_ytd_hours": 9.0,
+    "pending_hours": 0.0,
+    "balance_hours": 20.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1006",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 0.0,
+    "accrued_ytd_hours": 5.0,
+    "used_ytd_hours": 0.0,
+    "pending_hours": 0.0,
+    "balance_hours": 5.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1008",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 60.0,
+    "accrued_ytd_hours": 66.0,
+    "used_ytd_hours": 6.0,
+    "pending_hours": 0.0,
+    "balance_hours": 120.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1009",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 2.0,
+    "accrued_ytd_hours": 50.0,
+    "used_ytd_hours": 48.0,
+    "pending_hours": 0.0,
+    "balance_hours": 4.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1010",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 32.0,
+    "accrued_ytd_hours": 66.0,
+    "used_ytd_hours": 18.0,
+    "pending_hours": 0.0,
+    "balance_hours": 80.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1011",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 24.0,
+    "accrued_ytd_hours": 66.0,
+    "used_ytd_hours": 20.0,
+    "pending_hours": 0.0,
+    "balance_hours": 70.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1012",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 40.0,
+    "accrued_ytd_hours": 66.0,
+    "used_ytd_hours": 16.0,
+    "pending_hours": 0.0,
+    "balance_hours": 90.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1013",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 20.0,
+    "accrued_ytd_hours": 40.0,
+    "used_ytd_hours": 0.0,
+    "pending_hours": 0.0,
+    "balance_hours": 60.0,
+    "as_of_date": "2025-06-01"
+  },
+  {
+    "employee_id": "EMP-1018",
+    "plan_year": 2025,
+    "accrual_type": "accrual_based",
+    "carryover_hours_from_prior_year": 16.0,
+    "accrued_ytd_hours": 66.0,
+    "used_ytd_hours": 18.0,
+    "pending_hours": 0.0,
+    "balance_hours": 64.0,
+    "as_of_date": "2025-06-01"
+  }
+]
