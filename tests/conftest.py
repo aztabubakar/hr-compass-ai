@@ -8,11 +8,14 @@ Separate integration tests (in test_parsers.py) run against the real
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
+from core.paths import POLICIES_DIR
 from rag.config import RagConfig
+from rag.ingest import run_ingest
 
 FIXTURE_MARKDOWN = """# Sample Time Off Policy
 
@@ -89,3 +92,32 @@ def hashing_config(tmp_path: Path, tiny_corpus_dir: Path) -> RagConfig:
         index_dir=tmp_path / "index",
         embedding_backend="hashing",
     )
+
+
+# ---------------------------------------------------------------------------
+# MCP fixtures (Phase 2). These build a real index over the *actual* Solara
+# Dynamics corpus (not the tiny fixture above) using the hashing backend,
+# since the MCP tools/workflows are meant to be exercised against the real
+# policies. Session-scoped so the ~12-document corpus is only embedded once
+# for the whole test run.
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="session")
+def real_corpus_hashing_index_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    index_dir = tmp_path_factory.mktemp("mcp_rag_index")
+    run_ingest(RagConfig(policies_dir=POLICIES_DIR, index_dir=index_dir, embedding_backend="hashing"))
+    return index_dir
+
+
+@pytest.fixture
+def mcp_server_env(real_corpus_hashing_index_dir: Path, tmp_path: Path) -> dict[str, str]:
+    """Environment for launching the MCP server subprocess in tests:
+    hashing backend + the pre-built real-corpus index (both offline and
+    deterministic), plus a per-test isolated runtime-tickets file so
+    ticket-creation tests never touch each other or the real project data.
+    """
+    return {
+        **os.environ,
+        "EMBEDDING_BACKEND": "hashing",
+        "RAG_INDEX_DIR": str(real_corpus_hashing_index_dir),
+        "HR_COMPASS_RUNTIME_TICKETS_PATH": str(tmp_path / "runtime_tickets.json"),
+    }

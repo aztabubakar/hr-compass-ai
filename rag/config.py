@@ -28,12 +28,17 @@ def _env_float(name: str, default: float) -> float:
     return float(raw) if raw else default
 
 
+def _env_path(name: str, default: Path) -> Path:
+    raw = os.getenv(name)
+    return Path(raw) if raw else default
+
+
 @dataclass(frozen=True)
 class RagConfig:
     """Immutable settings for one ingestion/retrieval pipeline instance."""
 
-    policies_dir: Path = POLICIES_DIR
-    index_dir: Path = DEFAULT_RAG_INDEX_DIR
+    policies_dir: Path = _env_path("RAG_POLICIES_DIR", POLICIES_DIR)
+    index_dir: Path = _env_path("RAG_INDEX_DIR", DEFAULT_RAG_INDEX_DIR)
 
     # Chunking. Sizes are in characters, not tokens, to avoid taking a
     # tokenizer dependency in this module (see chunking.py for rationale).
