@@ -1,0 +1,47 @@
+[
+  {
+    "department_id": "DEPT-EXEC",
+    "name": "Executive",
+    "description": "Company leadership and executive staff."
+  },
+  {
+    "department_id": "DEPT-ENG",
+    "name": "Engineering",
+    "description": "Builds and maintains the Solara Flow platform."
+  },
+  {
+    "department_id": "DEPT-PRD",
+    "name": "Product",
+    "description": "Product management and product strategy for Solara Flow."
+  },
+  {
+    "department_id": "DEPT-SAL",
+    "name": "Sales",
+    "description": "New business and account management."
+  },
+  {
+    "department_id": "DEPT-CS",
+    "name": "Customer Success",
+    "description": "Customer onboarding, retention, and support escalations."
+  },
+  {
+    "department_id": "DEPT-MKT",
+    "name": "Marketing",
+    "description": "Brand, demand generation, and content marketing."
+  },
+  {
+    "department_id": "DEPT-FIN",
+    "name": "Finance",
+    "description": "Accounting, payroll administration, and financial planning."
+  },
+  {
+    "department_id": "DEPT-PNC",
+    "name": "People & Culture",
+    "description": "HR business partners, recruiting, and employee experience."
+  },
+  {
+    "department_id": "DEPT-IT",
+    "name": "IT & Security",
+    "description": "Corporate IT, equipment, and information security."
+  }
+]

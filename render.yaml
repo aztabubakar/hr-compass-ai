@@ -1,0 +1,42 @@
+# Render Blueprint for HR Compass AI: a single free-tier web service
+# running the FastAPI app (which owns the MCP client, which in turn
+# launches the MCP server as a stdio subprocess -- see design-and-evaluation.md
+# section 9 for the full deployment architecture). No separate services,
+# databases, or background workers are needed.
+#
+# Deploy: connect this repo in the Render dashboard and it will detect and
+# use this file (or apply it manually via "New +" -> "Blueprint").
+#
+# RAG index strategy (see design-and-evaluation.md section 10): the index
+# is built at BUILD time (buildCommand below), not on first request and
+# not committed to git. This means the (~one-time-per-deploy) fastembed
+# model download happens during Render's build step, not on a user's first
+# chat request, and every deployed instance starts with an index already
+# on disk.
+services:
+  - type: web
+    name: hr-compass-ai
+    runtime: python
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: "pip install -r requirements.txt && python -m rag.ingest"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: LLM_PROVIDER
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false  # set manually in the Render dashboard; never committed
+      - key: GROQ_MODEL
+        sync: false  # optional; leave unset to use llm/groq_provider.py's DEFAULT_GROQ_MODEL
+      - key: LLM_TEMPERATURE
+        value: "0.2"
+      - key: LLM_TIMEOUT_SECONDS
+        value: "30"
+      - key: EMBEDDING_BACKEND
+        value: fastembed
+      - key: MCP_TRANSPORT
+        value: stdio

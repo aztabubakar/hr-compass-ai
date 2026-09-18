@@ -8,3 +8,6 @@ __pycache__/
 .DS_Store
 .faiss/
 chroma_db/
+rag_index/
+rag_index_*/
+mock_data/runtime_tickets.json

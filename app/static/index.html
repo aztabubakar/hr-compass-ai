@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HR Compass AI</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --panel: #ffffff;
+    --border: #e2e8f0;
+    --text: #1a202c;
+    --text-muted: #64748b;
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
+    --accent-dark: #115e59;
+    --user-bubble: #0f766e;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #ffffff;
+    --warn-bg: #fffbeb;
+    --warn-border: #f59e0b;
+    --confirm-bg: #eff6ff;
+    --confirm-border: #3b82f6;
+    --error-bg: #fef2f2;
+    --error-border: #ef4444;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 18px;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header p { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+  .header-status {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; background: #cbd5e1; }
+  .dot.ok { background: #22c55e; }
+  .dot.bad { background: #ef4444; }
+
+  main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  #chat-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .message { display: flex; flex-direction: column; max-width: 720px; }
+  .message.user { align-self: flex-end; align-items: flex-end; }
+  .message.assistant { align-self: flex-start; align-items: flex-start; }
+  .bubble {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    font-size: 14.5px;
+  }
+  .message.user .bubble { background: var(--user-bubble); color: var(--user-bubble-text); border-bottom-right-radius: 3px; }
+  .message.assistant .bubble { background: var(--assistant-bubble); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+  .message.assistant .bubble.loading { color: var(--text-muted); font-style: italic; }
+  .message.assistant .bubble.error { background: var(--error-bg); border-color: var(--error-border); }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-top: 6px;
+  }
+  .badge.clarify { background: var(--warn-bg); border: 1px solid var(--warn-border); color: #92400e; }
+  .badge.confirm { background: var(--confirm-bg); border: 1px solid var(--confirm-border); color: #1e40af; }
+  .badge.escalated { background: #fdf2f8; border: 1px solid #ec4899; color: #9d174d; }
+
+  .confirm-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .confirm-actions button {
+    font-size: 13px; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--confirm-border); background: white; color: #1e40af; font-weight: 600;
+  }
+  .confirm-actions button.yes { background: var(--confirm-border); color: white; }
+
+  .citations {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .citation-chip {
+    font-size: 11.5px;
+    background: var(--accent-soft);
+    color: var(--accent-dark);
+    border-radius: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .citation-chip:hover { border-color: var(--accent); }
+  .citation-detail {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-top: 6px;
+    display: none;
+    max-width: 640px;
+  }
+  .citation-detail.open { display: block; }
+
+  details.trace-panel {
+    margin-top: 8px;
+    font-size: 12.5px;
+    max-width: 640px;
+  }
+  details.trace-panel summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-weight: 600;
+    user-select: none;
+  }
+  .trace-step {
+    display: flex;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+    align-items: baseline;
+  }
+  .trace-step .n { color: var(--text-muted); min-width: 16px; }
+  .trace-step .tool-name { font-weight: 600; font-family: ui-monospace, monospace; }
+  .trace-step .status-ok { color: #16a34a; font-size: 11px; }
+  .trace-step .status-error { color: #dc2626; font-size: 11px; }
+  .trace-step .summary { color: var(--text-muted); }
+  .trace-step .args { font-family: ui-monospace, monospace; font-size: 11px; color: #94a3b8; }
+
+  #input-row {
+    display: flex;
+    gap: 10px;
+    padding: 16px 24px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+  }
+  #message-input {
+    flex: 1;
+    padding: 11px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 14.5px;
+    resize: none;
+    font-family: inherit;
+  }
+  #message-input:focus { outline: none; border-color: var(--accent); }
+  #send-button {
+    padding: 0 22px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  #send-button:disabled { background: #94a3b8; cursor: not-allowed; }
+
+  #sidebar {
+    width: 260px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    padding: 18px;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+  #sidebar h2 { font-size: 13px; margin: 0 0 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  #sidebar .example-prompt {
+    display: block;
+    text-align: left;
+    width: 100%;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  #sidebar .example-prompt:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+  @media (max-width: 860px) {
+    #sidebar { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">HC</div>
+  <div>
+    <h1>HR Compass AI</h1>
+    <p>Solara Dynamics HR Assistant &mdash; synthetic demo data</p>
+  </div>
+  <div class="header-status">
+    <span><span class="dot" id="dot-mcp"></span>MCP</span>
+    <span><span class="dot" id="dot-rag"></span>RAG</span>
+    <span><span class="dot" id="dot-llm"></span>LLM</span>
+  </div>
+</header>
+
+<main>
+  <div id="chat-column">
+    <div id="messages"></div>
+    <div id="input-row">
+      <textarea id="message-input" rows="1" placeholder="Ask about PTO, benefits, remote work, or any HR policy..."></textarea>
+      <button id="send-button">Send</button>
+    </div>
+  </div>
+  <aside id="sidebar">
+    <h2>Try asking</h2>
+    <button class="example-prompt" data-prompt="What is Solara's paid holiday policy?">What is Solara's paid holiday policy?</button>
+    <button class="example-prompt" data-prompt="My employee ID is EMP-1001. Can I take three days of PTO next week?">My employee ID is EMP-1001. Can I take three days of PTO next week?</button>
+    <button class="example-prompt" data-prompt="I'm EMP-1002. Can I work from Colorado for six weeks?">I'm EMP-1002. Can I work from Colorado for six weeks?</button>
+    <button class="example-prompt" data-prompt="I'm EMP-1003. Can I work from Portugal for six weeks?">I'm EMP-1003. Can I work from Portugal for six weeks?</button>
+    <button class="example-prompt" data-prompt="EMP-1004 &mdash; am I enrolled in medical benefits?">EMP-1004 &mdash; am I enrolled in medical benefits?</button>
+    <button class="example-prompt" data-prompt="Can I work somewhere else next month?">Can I work somewhere else next month?</button>
+    <button class="example-prompt" data-prompt="How much PTO do I have?">How much PTO do I have?</button>
+    <button class="example-prompt" data-prompt="What is the company's stock option vesting schedule?">What is the company's stock option vesting schedule?</button>
+    <button class="example-prompt" data-prompt="I want to report harassment by a coworker.">I want to report harassment by a coworker.</button>
+  </aside>
+</main>
+
+<script>
+const messagesEl = document.getElementById('messages');
+const inputEl = document.getElementById('message-input');
+const sendButton = document.getElementById('send-button');
+
+let conversationId = null;
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function setStatusDot(id, ok) {
+  const el = document.getElementById(id);
+  el.classList.remove('ok', 'bad');
+  el.classList.add(ok ? 'ok' : 'bad');
+}
+
+async function loadHealth() {
+  try {
+    const res = await fetch('/health');
+    const data = await res.json();
+    setStatusDot('dot-mcp', data.mcp && data.mcp.ready === true);
+    setStatusDot('dot-rag', data.rag && data.rag.ready === true);
+    setStatusDot('dot-llm', data.llm && data.llm.configured === true);
+  } catch (e) {
+    setStatusDot('dot-mcp', false);
+    setStatusDot('dot-rag', false);
+    setStatusDot('dot-llm', false);
+  }
+}
+
+function addUserMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'message user';
+  div.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function addLoadingMessage() {
+  const div = document.createElement('div');
+  div.className = 'message assistant';
+  div.id = 'loading-message';
+  div.innerHTML = `<div class="bubble loading">HR Compass AI is thinking&hellip;</div>`;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function removeLoadingMessage() {
+  const el = document.getElementById('loading-message');
+  if (el) el.remove();
+}
+
+function renderTrace(trace) {
+  if (!trace || trace.length === 0) return '';
+  const steps = trace.map(step => {
+    const statusClass = step.status === 'success' ? 'status-ok' : 'status-error';
+    const args = step.arguments ? JSON.stringify(step.arguments) : '';
+    const tool = step.tool || '(decision)';
+    return `<div class="trace-step">
+      <span class="n">${step.step}.</span>
+      <div>
+        <div><span class="tool-name">${escapeHtml(tool)}</span> <span class="${statusClass}">${escapeHtml(step.status)}</span></div>
+        ${args ? `<div class="args">${escapeHtml(args)}</div>` : ''}
+        <div class="summary">${escapeHtml(step.result_summary || '')}</div>
+        ${step.escalation ? `<div class="args">escalation: ${escapeHtml(step.escalation)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  return `<details class="trace-panel">
+    <summary>Agent Activity (${trace.length} step${trace.length === 1 ? '' : 's'})</summary>
+    ${steps}
+  </details>`;
+}
+
+function renderCitations(citations) {
+  if (!citations || citations.length === 0) return '';
+  const chips = citations.map((c, i) => {
+    return `<span class="citation-chip" onclick="toggleCitation(this)">${escapeHtml(c.document_id)} &sect;${escapeHtml(c.section)}</span>
+      <div class="citation-detail">${escapeHtml(c.document_title)} &mdash; ${escapeHtml(c.section)}<br><em>&ldquo;${escapeHtml(c.snippet)}&rdquo;</em></div>`;
+  }).join('');
+  return `<div class="citations">${chips}</div>`;
+}
+
+window.toggleCitation = function(chip) {
+  const detail = chip.nextElementSibling;
+  detail.classList.toggle('open');
+};
+
+function addAssistantMessage(result) {
+  const div = document.createElement('div');
+  div.className = 'message assistant';
+
+  let badges = '';
+  if (result.requires_clarification) {
+    badges += `<span class="badge clarify">Clarification needed</span>`;
+  }
+  if (result.requires_confirmation) {
+    badges += `<span class="badge confirm">Confirmation needed</span>`;
+  }
+  if (result.escalated) {
+    badges += `<span class="badge escalated">Escalated</span>`;
+  }
+
+  let confirmActions = '';
+  if (result.requires_confirmation) {
+    confirmActions = `<div class="confirm-actions">
+      <button class="yes" onclick="sendQuickReply('Yes, please proceed.')">Yes, proceed</button>
+      <button onclick="sendQuickReply('No, thanks.')">No</button>
+    </div>`;
+  }
+
+  div.innerHTML = `
+    <div class="bubble">${escapeHtml(result.answer)}</div>
+    ${badges}
+    ${confirmActions}
+    ${renderCitations(result.citations)}
+    ${renderTrace(result.trace)}
+  `;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function addErrorMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'message assistant';
+  div.innerHTML = `<div class="bubble error">${escapeHtml(text)}</div>`;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  addUserMessage(text);
+  inputEl.value = '';
+  sendButton.disabled = true;
+  addLoadingMessage();
+
+  try {
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, conversation_id: conversationId }),
+    });
+    removeLoadingMessage();
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      addErrorMessage(errBody.detail || `Request failed (${res.status}).`);
+      return;
+    }
+    const data = await res.json();
+    conversationId = data.conversation_id;
+    addAssistantMessage(data);
+  } catch (e) {
+    removeLoadingMessage();
+    addErrorMessage('Could not reach HR Compass AI. Please check your connection and try again.');
+  } finally {
+    sendButton.disabled = false;
+  }
+}
+
+window.sendQuickReply = function(text) {
+  sendMessage(text);
+};
+
+sendButton.addEventListener('click', () => sendMessage(inputEl.value));
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage(inputEl.value);
+  }
+});
+document.querySelectorAll('.example-prompt').forEach(btn => {
+  btn.addEventListener('click', () => sendMessage(btn.dataset.prompt));
+});
+
+loadHealth();
+</script>
+
+</body>
+</html>

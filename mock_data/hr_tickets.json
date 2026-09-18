@@ -1,0 +1,122 @@
+[
+  {
+    "ticket_id": "TCK-20025",
+    "employee_id": "EMP-1001",
+    "category": "PTO",
+    "subject": "Question about PTO carryover cap",
+    "status": "resolved",
+    "created_date": "2025-01-08",
+    "resolved_date": "2025-01-09",
+    "summary": "Employee asked how many PTO days could be carried into 2025. Confirmed 5-day (40 hour) carryover cap per POL-PTO-001."
+  },
+  {
+    "ticket_id": "TCK-20031",
+    "employee_id": "EMP-1002",
+    "category": "Work Location",
+    "subject": "Considering a temporary move to Colorado",
+    "status": "in_progress",
+    "created_date": "2025-05-22",
+    "resolved_date": null,
+    "summary": "Employee is exploring working from Denver, CO for an extended period and asked what approvals would be required."
+  },
+  {
+    "ticket_id": "TCK-20033",
+    "employee_id": "EMP-1003",
+    "category": "Work Location",
+    "subject": "Working from Portugal for six weeks",
+    "status": "open",
+    "created_date": "2025-05-27",
+    "resolved_date": null,
+    "summary": "Employee requested guidance on working remotely from Lisbon, Portugal for six weeks this summer."
+  },
+  {
+    "ticket_id": "TCK-19988",
+    "employee_id": "EMP-1004",
+    "category": "Benefits",
+    "subject": "Why am I not eligible for medical coverage?",
+    "status": "resolved",
+    "created_date": "2024-02-10",
+    "resolved_date": "2024-02-12",
+    "summary": "Explained that part-time employees under 30 hours/week are not eligible for medical/dental/vision per POL-BEN-001, but are eligible for the 401(k) plan."
+  },
+  {
+    "ticket_id": "TCK-20040",
+    "employee_id": "EMP-1005",
+    "category": "IT Equipment",
+    "subject": "Laptop request for new contract engagement",
+    "status": "closed",
+    "created_date": "2025-06-01",
+    "resolved_date": "2025-06-04",
+    "summary": "Standard contractor equipment issued per POL-EQP-001."
+  },
+  {
+    "ticket_id": "TCK-20041",
+    "employee_id": "EMP-1006",
+    "category": "Onboarding",
+    "subject": "New hire equipment tracking",
+    "status": "in_progress",
+    "created_date": "2025-05-21",
+    "resolved_date": null,
+    "summary": "Onboarding checklist in progress; equipment shipped to Denver, CO address prior to start date."
+  },
+  {
+    "ticket_id": "TCK-20005",
+    "employee_id": "EMP-1008",
+    "category": "PTO",
+    "subject": "PTO payout question ahead of possible relocation",
+    "status": "resolved",
+    "created_date": "2025-03-14",
+    "resolved_date": "2025-03-15",
+    "summary": "Confirmed California PTO payout and no-forfeiture treatment under POL-PTO-001 Section 7."
+  },
+  {
+    "ticket_id": "TCK-20050",
+    "employee_id": "EMP-1009",
+    "category": "PTO",
+    "subject": "Can I take unpaid time off since I'm low on PTO?",
+    "status": "open",
+    "created_date": "2025-05-30",
+    "resolved_date": null,
+    "summary": "Employee has a low PTO balance and is asking about options, including unpaid personal leave under POL-LEV-001."
+  },
+  {
+    "ticket_id": "TCK-20012",
+    "employee_id": "EMP-1013",
+    "category": "Leave",
+    "subject": "Parental leave documentation",
+    "status": "resolved",
+    "created_date": "2025-04-20",
+    "resolved_date": "2025-04-25",
+    "summary": "Processed parental leave request and confirmed 12-week paid leave start date under POL-LEV-001."
+  },
+  {
+    "ticket_id": "TCK-19950",
+    "employee_id": "EMP-1014",
+    "category": "Payroll",
+    "subject": "UK payslip question",
+    "status": "closed",
+    "created_date": "2023-11-02",
+    "resolved_date": "2023-11-06",
+    "summary": "Routed to EOR provider for UK payroll question; not covered by U.S. payroll policy."
+  },
+  {
+    "ticket_id": "TCK-19870",
+    "employee_id": "EMP-1017",
+    "category": "Other",
+    "subject": "Final equipment return",
+    "status": "closed",
+    "created_date": "2024-06-01",
+    "resolved_date": "2024-06-10",
+    "summary": "Confirmed return of company laptop and monitor within 10 business days of separation per POL-EQP-001."
+  },
+  {
+    "ticket_id": "TCK-20044",
+    "employee_id": "EMP-1018",
+    "category": "PTO",
+    "subject": "PTO request during quarter close",
+    "status": "resolved",
+    "created_date": "2025-06-05",
+    "resolved_date": "2025-06-06",
+    "summary": "Explained the Finance quarter-close PTO blackout window under POL-PTO-001 Section 6 and helped reschedule the request."
+  }
+]

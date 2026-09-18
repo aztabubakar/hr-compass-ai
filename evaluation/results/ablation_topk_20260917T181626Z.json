@@ -1,0 +1,42 @@
+{
+  "comparison": "top_k=3 vs top_k=5 retrieval",
+  "generated_at": "20260917T181626Z",
+  "embedding_backend": "hashing",
+  "n_queries": 14,
+  "queries": [
+    "What is Solara's paid holiday policy?",
+    "How much PTO do employees accrue per month during their first three years?",
+    "What is Solara's rule on carrying over unused PTO into the next year?",
+    "If I'm on approved parental leave and a company holiday falls during it, do I still get holiday pay, and does that use up my PTO balance?",
+    "My employee ID is EMP-1001. Can I take three days of PTO next week?",
+    "I'm EMP-1004. I'd like to take 5 days of PTO -- do I have enough balance?",
+    "I'm EMP-1002. Can I work from Colorado for six weeks?",
+    "I'm EMP-1006, based in Colorado. Can I temporarily work from New York for about 10 business days?",
+    "I'm EMP-1003. Can I work from Portugal for six weeks?",
+    "I'm EMP-1007. Can I work remotely from Germany for two weeks?",
+    "What approval do I need for a business expense report between $1,000 and $5,000?",
+    "I'm EMP-1002, Colorado, for about six weeks.",
+    "I want to report harassment by a coworker.",
+    "My manager has been making inappropriate comments about my personal life and I'm not sure what to do."
+  ],
+  "results": [
+    {
+      "top_k": 3,
+      "n_queries": 14,
+      "doc_hit_rate": 0.7857142857142857,
+      "doc_recall_avg": 0.7142857142857143,
+      "mean_top_score": 0.3567346228020532,
+      "latency_mean_seconds": 5.635764287197682e-05,
+      "latency_p95_seconds": 7.322300007217564e-05
+    },
+    {
+      "top_k": 5,
+      "n_queries": 14,
+      "doc_hit_rate": 0.8571428571428571,
+      "doc_recall_avg": 0.8571428571428571,
+      "mean_top_score": 0.3567346228020532,
+      "latency_mean_seconds": 4.479635716084626e-05,
+      "latency_p95_seconds": 7.021500005066628e-05
+    }
+  ]
+}
