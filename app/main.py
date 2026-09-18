@@ -33,6 +33,20 @@ from mcp_client.client import MCPClient, MCPClientError
 
 logger = logging.getLogger("hr_compass_ai.app")
 
+# Without this, the root logger has no handler at all, so anything below
+# WARNING (e.g. this module's own `logger.info("Connected to MCP
+# server.")`) is silently dropped by Python's logging "handler of last
+# resort" -- and even WARNING/ERROR only reach stderr by accident of that
+# fallback, with no timestamp/logger-name context. `basicConfig` is a
+# no-op if a handler is already attached to the root logger (e.g. because
+# something else configured logging first), so this is safe to call
+# unconditionally. Overridable via LOG_LEVEL for local debugging
+# (`LOG_LEVEL=DEBUG uvicorn app.main:app`); defaults to INFO in production.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 

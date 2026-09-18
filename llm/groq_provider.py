@@ -14,11 +14,15 @@ that, not a one-off.
 """
 from __future__ import annotations
 
+import logging
 import os
+import re
 
 import openai
 
 from llm.base import ChatMessage, LLMConfigError, LLMProvider, LLMProviderError, LLMResponse, ToolCall, ToolDefinition
+
+logger = logging.getLogger("hr_compass_ai.llm.groq")
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 # Overridable via GROQ_MODEL; this default is a current (as of writing)
@@ -69,6 +73,25 @@ def _to_openai_tool(tool: ToolDefinition) -> dict:
     }
 
 
+_BEARER_PATTERN = re.compile(r"(?i)(bearer\s+)[a-zA-Z0-9._\-]+")
+
+
+def _redact(text: str | None, secret: str | None) -> str:
+    """Strip anything that could be the configured API key, or a bearer
+    token, out of a string before it's ever logged. Applied defensively to
+    every error message this module logs, even though `openai`'s status
+    errors are built from the API *response body* (Groq's own error text),
+    never from our outgoing request headers -- see `_make_status_error_from_response`
+    in the `openai` SDK -- so the key should never actually appear here.
+    This is belt-and-suspenders, not a sign the key was observed leaking.
+    """
+    if not text:
+        return "" if text is None else text
+    if secret:
+        text = text.replace(secret, "[REDACTED]")
+    return _BEARER_PATTERN.sub(r"\1[REDACTED]", text)
+
+
 def _from_openai_message(message: object) -> ChatMessage:
     import json
 
@@ -104,7 +127,33 @@ class GroqProvider:
         self.model = model or os.getenv("GROQ_MODEL") or DEFAULT_GROQ_MODEL
         self.temperature = temperature
         self._timeout_seconds = timeout_seconds
+        # Kept only so error messages can be redacted before logging (see
+        # _log_provider_error/_redact below) -- never logged itself, and
+        # openai.AsyncOpenAI already holds this same value internally.
+        self._api_key = resolved_key
         self._client = openai.AsyncOpenAI(api_key=resolved_key, base_url=GROQ_BASE_URL, timeout=timeout_seconds)
+
+    def _log_provider_error(self, exc: Exception, category: str) -> None:
+        """Log a Groq/provider failure server-side with enough detail to
+        actually diagnose it (exception type, HTTP status code, API error
+        code, the configured model, and a redacted message) -- without ever
+        logging the API key, an Authorization header, or raw environment
+        variables. This is a deliberate fix for exactly the failure mode
+        where every /chat request comes back as a clean 200 with the
+        generic "trouble reaching the language model" answer and nothing
+        appears in server logs to say why: that graceful-degradation path
+        (agent/orchestrator.py catching LLMProviderError) is correct
+        user-facing behavior, but it must not be the only place this ever
+        surfaces.
+        """
+        status_code = getattr(exc, "status_code", None)
+        error_code = getattr(exc, "code", None)
+        raw_message = getattr(exc, "message", None) or str(exc)
+        message = _redact(raw_message, self._api_key)
+        logger.error(
+            "Groq provider error (%s): exception_type=%s status_code=%s error_code=%s model=%s message=%s",
+            category, type(exc).__name__, status_code, error_code, self.model, message,
+        )
 
     async def chat(
         self,
@@ -119,16 +168,20 @@ class GroqProvider:
                 temperature=self.temperature,
             )
         except openai.APITimeoutError as exc:
+            self._log_provider_error(exc, "timeout")
             raise LLMProviderError(
                 f"Groq API request timed out after {self._timeout_seconds}s."
             ) from exc
         except openai.AuthenticationError as exc:
+            self._log_provider_error(exc, "authentication_failed")
             raise LLMProviderError(
                 "Groq API rejected the configured GROQ_API_KEY (authentication failed)."
             ) from exc
         except openai.RateLimitError as exc:
+            self._log_provider_error(exc, "rate_limited")
             raise LLMProviderError("Groq API rate limit exceeded.") from exc
         except openai.APIError as exc:
+            self._log_provider_error(exc, "api_error")
             raise LLMProviderError(f"Groq API error: {exc}") from exc
 
         choice = response.choices[0]
