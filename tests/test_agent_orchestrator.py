@@ -239,9 +239,101 @@ def test_remote_work_interstate_multi_document_evidence(mcp_server_env: dict[str
     ])
     result = _run(mcp_server_env, fake, "I'm EMP-1002. Can I work from Colorado for six weeks?")
 
+    tools_called = [step["tool"] for step in result.trace if step["type"] == "tool_call"]
+    # Genuine multi-step orchestration: employee context, policy evidence
+    # from more than one document, and the rule check -- not just a single
+    # check_policy_compliance call (agent/prompts.py rule 4c).
+    assert tools_called.count("lookup_employee_profile") >= 1
+    assert tools_called.count("search_policy_documents") >= 2
+    assert "check_policy_compliance" in tools_called
     doc_ids = {c.document_id for c in result.citations}
     assert len(doc_ids) >= 2, f"expected multi-document evidence, got {doc_ids}"
     assert result.escalated is True
+
+
+# ---------------------------------------------------------------------------
+# C1. Interstate remote work within the no-approval threshold -> compliant,
+# not escalated -- still gathered through employee + policy evidence, not
+# just a bare rule check. A different employee/state than the flagship
+# EMP-1002/Colorado case, to prove this isn't special-cased to one example.
+# ---------------------------------------------------------------------------
+def test_remote_work_interstate_within_no_approval_threshold_is_compliant(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1006"}),
+        tool_call_turn("get_policy_section", {"document_id": "POL-LOC-001", "section": "Temporary Interstate Work"}),
+        tool_call_turn("check_policy_compliance", {
+            "employee_id": "EMP-1006", "scenario_type": "remote_work_request",
+            "destination_state": "New York", "duration_calendar_days": 14,
+        }),
+        final_turn(
+            "Yes -- 14 calendar days in New York is within the 30-calendar-day threshold, so "
+            "manager notice in Compass HR is sufficient and no additional approval is required, "
+            "per POL-LOC-001."
+        ),
+    ])
+    result = _run(mcp_server_env, fake, "I'm EMP-1006. Can I work from New York for two weeks?")
+
+    tools_called = [step["tool"] for step in result.trace if step["type"] == "tool_call"]
+    assert "lookup_employee_profile" in tools_called
+    assert "check_policy_compliance" in tools_called
+    compliance_step = next(s for s in result.trace if s["tool"] == "check_policy_compliance")
+    assert "status=compliant" in compliance_step["result_summary"]
+    assert result.escalated is False
+    assert result.citations
+
+
+# ---------------------------------------------------------------------------
+# C2. Interstate work exceeding the 30-calendar-day threshold ->
+# requires_approval, escalated. (The EMP-1002/Colorado/six-week case above
+# already covers this with full multi-document evidence; this covers it
+# with a different employee/state/duration to confirm the behavior is
+# generic, not tied to one hard-coded example.)
+# ---------------------------------------------------------------------------
+def test_remote_work_interstate_exceeding_threshold_requires_approval(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1007"}),
+        tool_call_turn("search_policy_documents", {"query": "interstate work location payroll registered states approval", "document_id": "POL-LOC-001", "top_k": 3}),
+        tool_call_turn("check_policy_compliance", {
+            "employee_id": "EMP-1007", "scenario_type": "remote_work_request",
+            "destination_state": "Washington", "duration_calendar_days": 35,
+        }),
+        final_turn(
+            "35 calendar days in Washington exceeds the 30-calendar-day no-approval threshold, "
+            "so this needs Payroll and People & Culture Team approval, per POL-LOC-001."
+        ),
+    ])
+    result = _run(mcp_server_env, fake, "I'm EMP-1007. Can I work from Washington for five weeks?")
+
+    compliance_step = next(s for s in result.trace if s["tool"] == "check_policy_compliance")
+    assert "status=requires_approval" in compliance_step["result_summary"]
+    assert result.escalated is True
+    assert "approved" not in result.answer.lower()
+
+
+# ---------------------------------------------------------------------------
+# C3. Unsupported/non-payroll-registered state -> requires_approval,
+# treated as a permanent-relocation-style request regardless of duration.
+# ---------------------------------------------------------------------------
+def test_remote_work_unsupported_state_requires_approval(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1002"}),
+        tool_call_turn("search_policy_documents", {"query": "interstate work location payroll registered states", "document_id": "POL-LOC-001", "top_k": 3}),
+        tool_call_turn("check_policy_compliance", {
+            "employee_id": "EMP-1002", "scenario_type": "remote_work_request",
+            "destination_state": "Ohio", "duration_calendar_days": 20,
+        }),
+        final_turn(
+            "Ohio isn't currently a state Solara Dynamics is payroll-registered in, so this is "
+            "treated as a permanent relocation request needing VP and Payroll approval, per "
+            "POL-LOC-001, regardless of how long you'd be there."
+        ),
+    ])
+    result = _run(mcp_server_env, fake, "I'm EMP-1002. Can I work from Ohio for a few weeks?")
+
+    compliance_step = next(s for s in result.trace if s["tool"] == "check_policy_compliance")
+    assert "status=requires_approval" in compliance_step["result_summary"]
+    assert result.escalated is True
+    assert result.citations
 
 
 # ---------------------------------------------------------------------------
@@ -259,8 +351,67 @@ def test_remote_work_international_thresholds_and_escalation(mcp_server_env: dic
     ])
     result = _run(mcp_server_env, fake, "I'm EMP-1003. Can I work from Portugal for six weeks?")
 
+    tools_called = [step["tool"] for step in result.trace if step["type"] == "tool_call"]
+    assert "lookup_employee_profile" in tools_called
+    assert "search_policy_documents" in tools_called
     assert result.citations
     assert result.escalated is True
+
+
+# ---------------------------------------------------------------------------
+# D1. International remote work to a country NOT on the approved EOR list
+# -> non_compliant, escalated, no citations fabricated.
+# ---------------------------------------------------------------------------
+def test_remote_work_international_unapproved_country_is_non_compliant(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1003"}),
+        tool_call_turn("get_policy_section", {"document_id": "POL-LOC-001", "section": "International Remote Work"}),
+        tool_call_turn("check_policy_compliance", {
+            "employee_id": "EMP-1003", "scenario_type": "remote_work_request",
+            "destination_country": "Germany", "duration_calendar_days": 20,
+        }),
+        final_turn(
+            "Germany isn't on Solara Dynamics' approved Employer-of-Record country list, so "
+            "international remote work there isn't currently supported, per POL-LOC-001."
+        ),
+    ])
+    result = _run(mcp_server_env, fake, "I'm EMP-1003. Can I work from Germany for three weeks?")
+
+    compliance_step = next(s for s in result.trace if s["tool"] == "check_policy_compliance")
+    assert "status=non_compliant" in compliance_step["result_summary"]
+    assert result.escalated is True
+    assert result.citations
+    assert "approved" not in result.answer.lower() or "isn't" in result.answer.lower()
+
+
+# ---------------------------------------------------------------------------
+# E. Remote work with missing information (no destination and/or no
+# duration) -> clarify rather than guess, per rule 6/7. Distinct from full
+# ambiguity: here an employee ID is known but a required piece is missing.
+# ---------------------------------------------------------------------------
+def test_remote_work_missing_destination_asks_for_clarification(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        final_turn("CLARIFY: Which state or country would you like to work from, and for how long?"),
+    ])
+    result = _run(mcp_server_env, fake, "I'm EMP-1002. Can I work remotely for a while?")
+
+    assert result.requires_clarification is True
+    assert not any(step["type"] == "tool_call" for step in result.trace)
+    assert "state or country" in result.answer.lower()
+
+
+def test_remote_work_missing_duration_asks_for_clarification(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1002"}),
+        final_turn("CLARIFY: How long would you like to work from Colorado?"),
+    ])
+    result = _run(mcp_server_env, fake, "I'm EMP-1002. Can I work from Colorado?")
+
+    assert result.requires_clarification is True
+    tools_called = [step["tool"] for step in result.trace if step["type"] == "tool_call"]
+    assert "check_policy_compliance" not in tools_called, (
+        "must not guess a duration and call the compliance tool with fabricated data"
+    )
 
 
 # ---------------------------------------------------------------------------

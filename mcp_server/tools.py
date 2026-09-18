@@ -293,6 +293,13 @@ def check_policy_compliance(
     at least one supporting policy citation; otherwise the status is
     "insufficient_evidence". See `mcp_server/compliance.py`'s module
     docstring for the full facts/rules/future-LLM distinction.
+
+    This tool evaluates the rule and attaches its own supporting policy
+    citations, but that is not a substitute for establishing who the
+    employee is (lookup_employee_profile) or for reading the actual
+    policy text yourself (search_policy_documents / get_policy_section)
+    when a request's context would help ground and explain the answer —
+    gather that evidence too, not just this tool's bare result.
     """
     if scenario_type not in ("pto_request", "remote_work_request"):
         raise ToolError(
