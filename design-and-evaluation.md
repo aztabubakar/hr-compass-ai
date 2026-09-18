@@ -820,6 +820,35 @@ compliance check when one is scripted, and that the resulting trace/answer
 correctly distinguish balance sufficiency, policy compliance, and (never
 claimed) approval.
 
+**Prompt v1.2.0 (production fix):** a live test of the required remote-work
+demo workflow (EMP-1002, Colorado, six weeks) showed the model calling only
+`check_policy_compliance` and getting a *correct* result (the tool attaches
+its own supporting citations internally) — but skipping the richer,
+multi-tool evidence-gathering sequence PROJECT_SPEC's demo workflow #2
+describes (lookup employee, retrieve remote-work/location policy, check
+compliance). New rule 4c asks the model, generically, to establish employee
+context and retrieve the actual policy text before calling
+`check_policy_compliance` for any concrete remote-work request, and
+explains *why* (grounding the final answer in specific retrieved language
+and the employee's context, not just the tool's terse rule result) — it
+does not restate any numeric threshold, country list, or approval rule;
+those stay exclusively in `mcp_server/compliance.py` and the policy corpus,
+per this fix's explicit constraint that compliance truth must never be
+duplicated into the prompt. `check_policy_compliance`'s own MCP tool
+description (`mcp_server/tools.py`, sent verbatim to the model via
+`tools/list`) was given the same framing for the same reason: it's read
+independently of the system prompt when the model considers this
+specific tool. As with the PTO fix, this is prompt/tool-description
+guidance only — `agent/orchestrator.py` still contains no
+scenario-specific branching, and whether a live model actually follows a
+multi-step sequence is a live-validation concern the offline suite cannot
+settle; `tests/test_agent_orchestrator.py`'s remote-work tests (categories
+C1-C3, D1, E) prove the orchestrator correctly executes whatever
+multi-tool sequence is scripted (different employees/states/countries than
+the flagship example, to show this isn't special-cased) and that
+citations/escalation/compliance status are reported correctly and without
+claiming approval.
+
 ### 7.6 Guardrails and action-confirmation safety (prompt + code, not prompt alone)
 
 Groundedness and the "never fabricate" rules above are enforced two ways,
