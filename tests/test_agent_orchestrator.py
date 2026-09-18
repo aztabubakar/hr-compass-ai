@@ -72,6 +72,158 @@ def test_pto_workflow_dynamic_tool_sequence(mcp_server_env: dict[str, str]) -> N
 
 
 # ---------------------------------------------------------------------------
+# B1. PTO with a relative date ("next week") must still reach a compliance
+# check with a resolved notice figure, not stop at the balance check and
+# hedge the notice question back to the user. Regression test for the
+# production bug where the agent said "if you can meet the 10-business-day
+# notice requirement" instead of resolving it.
+# ---------------------------------------------------------------------------
+def test_pto_relative_date_request_calls_compliance_check_with_resolved_notice(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1001"}),
+        tool_call_turn("check_pto_balance", {"employee_id": "EMP-1001"}),
+        tool_call_turn("search_policy_documents", {"query": "PTO request notice and manager approval", "document_id": "POL-PTO-001", "top_k": 3}),
+        # A well-behaved live model resolves "next week" against the
+        # current-date system message (agent/orchestrator.py's
+        # _current_date_context) and passes a concrete notice_business_days
+        # -- scripted here as what that resolution would produce, since
+        # FakeLLMProvider cannot itself do date arithmetic; see
+        # agent/prompts.py rule 4a.
+        tool_call_turn("check_policy_compliance", {
+            "employee_id": "EMP-1001", "scenario_type": "pto_request",
+            "requested_days": 3, "notice_business_days": 3,
+        }),
+        final_turn(
+            "You have 48 hours (6 days) of PTO available, which covers 3 days. Treating "
+            "\"next week\" as starting next Monday, that's about 3 business days of notice, "
+            "which is short of POL-PTO-001's 10-business-day requirement for a request this "
+            "length, so this would need your manager's discretion as a short-notice exception "
+            "rather than standard approval."
+        ),
+    ])
+    result = _run(mcp_server_env, fake, "My employee ID is EMP-1001. Can I take three days of PTO next week?")
+
+    tools_called = [step["tool"] for step in result.trace if step["type"] == "tool_call"]
+    assert "check_policy_compliance" in tools_called, (
+        "the compliance check must not be skipped once balance and a resolvable timeframe are known"
+    )
+    compliance_step = next(s for s in result.trace if s["tool"] == "check_policy_compliance")
+    assert compliance_step["arguments"]["requested_days"] == 3
+    assert compliance_step["arguments"]["notice_business_days"] is not None
+
+    # The model actually had the grounding to do this resolution: a
+    # deterministic current-date system message must have been sent.
+    sent_messages = fake.calls[0]["messages"]
+    assert any(m.role == "system" and m.content and "Current date:" in m.content for m in sent_messages), (
+        "the model must be given today's date to resolve a relative reference like 'next week'"
+    )
+
+    # Never claim/imply approval -- compliance status is not manager sign-off.
+    assert "approved" not in result.answer.lower()
+    assert "granted" not in result.answer.lower()
+
+
+# ---------------------------------------------------------------------------
+# B2. Insufficient notice -> requires_approval (short-notice exception), not
+# silently denied and not described as approved.
+# ---------------------------------------------------------------------------
+def test_pto_insufficient_notice_is_flagged_for_manager_discretion(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("check_pto_balance", {"employee_id": "EMP-1001"}),
+        tool_call_turn("check_policy_compliance", {
+            "employee_id": "EMP-1001", "scenario_type": "pto_request",
+            "requested_days": 3, "notice_business_days": 2,
+        }),
+        final_turn(
+            "You have enough PTO balance for 3 days, but only 2 business days of notice was "
+            "given, short of POL-PTO-001's 10-business-day requirement, so this needs your "
+            "manager's discretion as a short-notice exception rather than standard approval."
+        ),
+    ])
+    result = _run(mcp_server_env, fake, "EMP-1001, can I take 3 days off starting in 2 business days?")
+
+    compliance_step = next(s for s in result.trace if s["tool"] == "check_policy_compliance")
+    assert "status=requires_approval" in compliance_step["result_summary"]
+    assert compliance_step["escalation"]
+    assert result.escalated is True
+    assert "approved" not in result.answer.lower()
+
+
+# ---------------------------------------------------------------------------
+# B3. Sufficient notice -> compliant, still described as meeting policy
+# requirements rather than as final approval.
+# ---------------------------------------------------------------------------
+def test_pto_sufficient_notice_is_compliant_but_not_worded_as_approval(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("check_pto_balance", {"employee_id": "EMP-1001"}),
+        tool_call_turn("check_policy_compliance", {
+            "employee_id": "EMP-1001", "scenario_type": "pto_request",
+            "requested_days": 3, "notice_business_days": 12,
+        }),
+        final_turn(
+            "You have enough PTO balance for 3 days, and 12 business days of notice meets "
+            "POL-PTO-001's 10-business-day requirement, so this meets the policy's requirements. "
+            "Your manager still needs to approve the request in Compass HR."
+        ),
+    ])
+    result = _run(mcp_server_env, fake, "EMP-1001, can I take 3 days off starting in three weeks?")
+
+    compliance_step = next(s for s in result.trace if s["tool"] == "check_policy_compliance")
+    assert "status=compliant" in compliance_step["result_summary"]
+    assert "approved" not in result.answer.lower()
+    assert "granted" not in result.answer.lower()
+
+
+# ---------------------------------------------------------------------------
+# B4. Insufficient balance -> non_compliant, distinct from a notice problem.
+# ---------------------------------------------------------------------------
+def test_pto_insufficient_balance_is_reported_as_non_compliant(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1004"}),
+        tool_call_turn("check_pto_balance", {"employee_id": "EMP-1004"}),
+        tool_call_turn("check_policy_compliance", {
+            "employee_id": "EMP-1004", "scenario_type": "pto_request",
+            "requested_days": 5, "notice_business_days": 15,
+        }),
+        final_turn(
+            "You have 20 hours of PTO available, which is not enough for 5 days (40 hours "
+            "needed), so this request does not have sufficient balance regardless of notice."
+        ),
+    ])
+    result = _run(mcp_server_env, fake, "I'm EMP-1004. Can I take 5 days off starting in three weeks?")
+
+    compliance_step = next(s for s in result.trace if s["tool"] == "check_policy_compliance")
+    assert "status=non_compliant" in compliance_step["result_summary"]
+    assert "not enough" in result.answer.lower()
+    assert "approved" not in result.answer.lower()
+
+
+# ---------------------------------------------------------------------------
+# B5. Recovery from an invented/invalid policy section name: the model must
+# use the real heading list from the tool error, not repeat the guess or
+# fabricate content, per agent/prompts.py rule 3a.
+# ---------------------------------------------------------------------------
+def test_recovery_from_invented_policy_section_name(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("get_policy_section", {"document_id": "POL-PTO-001", "section": "Request Procedure"}),
+        tool_call_turn("get_policy_section", {"document_id": "POL-PTO-001", "section": "Requesting and Approving PTO"}),
+        final_turn("To request PTO, submit it through Compass HR for manager approval, per POL-PTO-001."),
+    ])
+    result = _run(mcp_server_env, fake, "How do I request PTO?")
+
+    error_steps = [s for s in result.trace if s["status"] == "error"]
+    assert len(error_steps) == 1
+    assert "Request Procedure" in error_steps[0]["result_summary"]
+    # The real heading was listed in the tool's own error, and the model
+    # used it on retry rather than guessing again or giving up.
+    assert "Requesting and Approving PTO" in error_steps[0]["result_summary"]
+
+    success_steps = [s for s in result.trace if s["tool"] == "get_policy_section" and s["status"] == "success"]
+    assert len(success_steps) == 1
+    assert result.answer
+
+
+# ---------------------------------------------------------------------------
 # C. Remote work - interstate
 # ---------------------------------------------------------------------------
 def test_remote_work_interstate_multi_document_evidence(mcp_server_env: dict[str, str]) -> None:

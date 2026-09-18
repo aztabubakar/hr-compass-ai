@@ -791,6 +791,35 @@ answer with no narrated tool use and no visible step-by-step reasoning
 (only the two reserved prefixes are special); output operational facts
 only through the trace, never through prose.
 
+**Prompt v1.1.0 (production fix):** a live test surfaced that the agent
+would check PTO balance and retrieve the PTO policy for a concrete request
+like "three days of PTO next week," but stop there and hedge the notice
+question back to the user ("if you can meet the 10-business-day notice
+requirement") instead of resolving "next week" and calling
+`check_policy_compliance`. Two changes fixed this: (1)
+`agent/orchestrator.py` now sends a second, dynamically-generated system
+message every turn (`_current_date_context()`) stating the real current
+date (UTC) — without it the model has no grounded "today" to resolve a
+relative phrase against; (2) `SYSTEM_PROMPT` gained explicit rules (4a/4b)
+requiring a compliance check whenever a PTO request has enough information
+to resolve a timeframe, a documented convention for resolving an
+ambiguous relative phrase to its earliest plausible date (a conservative
+minimum-notice estimate), and an explicit ban on ever describing a result
+as "approved"/"granted" (compliance status is not human sign-off). Rule 3a
+was added at the same time for an unrelated but related-in-symptom issue:
+the model was observed inventing a `get_policy_section` section name
+("Request Procedure") instead of using an exact heading already seen or
+returned by a prior tool error's "available sections" list. None of this
+is enforced as a hard-coded PTO branch in `agent/orchestrator.py` — it
+remains prompt guidance for an LLM that still decides tool sequencing
+itself; correctness of the model's own date arithmetic on a live call is
+a live-validation concern (see Section 10.2), not something the offline,
+scripted test suite can prove — the offline tests (`tests/test_agent_orchestrator.py`,
+category B1-B5) prove only that the orchestrator faithfully executes a
+compliance check when one is scripted, and that the resulting trace/answer
+correctly distinguish balance sufficiency, policy compliance, and (never
+claimed) approval.
+
 ### 7.6 Guardrails and action-confirmation safety (prompt + code, not prompt alone)
 
 Groundedness and the "never fabricate" rules above are enforced two ways,
@@ -822,6 +851,19 @@ deliberately not relying on prompting alone:
   Would you like me to proceed?" -> explicit yes -> then, and only then,
   `confirmed=true`). See `tests/test_agent_orchestrator.py::test_ticket_creation_without_prior_confirmation_turn_is_downgraded_to_preview`
   and `::test_ticket_creation_after_confirmation_offer_is_allowed`.
+- **Sanitized operational trace**: when the LLM provider itself fails
+  (timeout, auth, rate limit, any other API error), `AgentOrchestrator.run()`
+  logs the full raw exception server-side (`logging.error(...)`, and
+  `GroqProvider` logs its own sanitized-but-detailed record beneath that —
+  see Section 9.3's logging design) but records only a fixed, generic
+  decision string in the `TraceStep` returned to the client
+  ("LLM provider error occurred; unable to reach the language model.") —
+  never the raw provider exception text. This matters because the trace is
+  rendered directly, un-reinterpreted, by the web UI's "Agent Activity"
+  panel (`app/static/index.html`'s `renderTrace()`); an earlier version of
+  this trace line embedded the raw exception string, which would have
+  surfaced upstream API status/error-code detail to end users. See
+  `tests/test_llm_provider_logging.py::test_orchestrator_logs_llm_provider_errors_and_keeps_the_graceful_response`.
 
 ### 7.7 Conversation state
 

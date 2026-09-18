@@ -21,6 +21,7 @@ No real network call is made anywhere in this file -- the openai client's
 """
 from __future__ import annotations
 
+import json
 import logging
 
 import anyio
@@ -186,5 +187,14 @@ def test_orchestrator_logs_llm_provider_errors_and_keeps_the_graceful_response(
     assert result.answer == "I'm having trouble reaching the language model right now. Please try again shortly."
     assert result.escalated is True
 
-    # But now it's actually visible server-side.
+    # The client-facing operational trace (what the "Agent Activity" panel
+    # renders) must be sanitized -- never the raw provider/API exception
+    # text -- even though the full detail is available server-side.
+    trace_text = json.dumps(result.trace)
+    assert "ran out of scripted responses" not in trace_text
+    decision_steps = [s for s in result.trace if s["type"] == "decision"]
+    assert any(s["escalation"] == "llm_unavailable" for s in decision_steps)
+
+    # But the full detail is actually visible server-side, in logs.
     assert any("LLM provider error during agent turn" in r.message for r in caplog.records)
+    assert any("ran out of scripted responses" in r.message for r in caplog.records)
