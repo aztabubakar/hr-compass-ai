@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 
 from agent.prompts import SYSTEM_PROMPT
 from agent.schemas import AgentResponse, Citation
@@ -47,6 +48,30 @@ _MAX_ITERATIONS_MESSAGE = (
     "I wasn't able to finish gathering everything needed for this request within my "
     "step budget. Please try rephrasing your question, or contact HR directly."
 )
+
+
+def _current_date_context(now: datetime | None = None) -> str:
+    """A short, deterministic, server-generated system message giving the
+    model an authoritative "today" to anchor relative-date resolution
+    against (e.g. "next week", "tomorrow", "in two weeks" in a PTO
+    request). Without this, the model has no reliable notion of the
+    current date and cannot compute a real notice_business_days figure for
+    check_policy_compliance -- it can only hedge ("if you can meet the
+    notice requirement"). Kept as a separate system message, not baked
+    into the static, versioned SYSTEM_PROMPT string, since this one line
+    changes on every request.
+
+    UTC is used (not a per-employee or server-local timezone) since this
+    project has no per-user timezone data to ground a "local" date in;
+    documented here as a known simplification.
+    """
+    now = now or datetime.now(timezone.utc)
+    return (
+        f"Current date: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')}), UTC. Use this as "
+        "\"today\" when resolving any relative date or time reference in the user's request "
+        "(for example \"next week\", \"tomorrow\", \"in two weeks\") into a concrete number of "
+        "business days for check_policy_compliance's notice_business_days argument."
+    )
 
 
 def _parse_control_prefix(text: str) -> tuple[bool, bool, str]:
@@ -98,7 +123,10 @@ class AgentOrchestrator:
             trace.record_decision(f"MCP tool discovery failed: {exc}", escalation="mcp_unavailable")
             return AgentResponse(answer=_UNAVAILABLE_MESSAGE, trace=trace.as_list(), escalated=True)
 
-        messages: list[ChatMessage] = [ChatMessage(role="system", content=SYSTEM_PROMPT)]
+        messages: list[ChatMessage] = [
+            ChatMessage(role="system", content=SYSTEM_PROMPT),
+            ChatMessage(role="system", content=_current_date_context()),
+        ]
         if history:
             messages.extend(history)
         messages.append(ChatMessage(role="user", content=user_message))
@@ -118,7 +146,15 @@ class AgentOrchestrator:
                 # failure is visible in server logs even for a provider
                 # that doesn't do its own logging.
                 logger.error("LLM provider error during agent turn: %s", exc)
-                trace.record_decision(f"LLM provider error: {exc}", escalation="llm_unavailable")
+                # The trace is returned to, and rendered by, the client's
+                # "Agent Activity" panel -- unlike the log line above, it
+                # must never carry the raw provider exception text (which
+                # can include the upstream API's status/error-code detail).
+                # Sanitized here; full detail is server-side only, in logs.
+                trace.record_decision(
+                    "LLM provider error occurred; unable to reach the language model.",
+                    escalation="llm_unavailable",
+                )
                 return AgentResponse(
                     answer="I'm having trouble reaching the language model right now. Please try again shortly.",
                     citations=collected_citations, snippets=[c.snippet for c in collected_citations],
