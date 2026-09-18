@@ -19,6 +19,7 @@ by, or by, this orchestrator.
 from __future__ import annotations
 
 import json
+import logging
 
 from agent.prompts import SYSTEM_PROMPT
 from agent.schemas import AgentResponse, Citation
@@ -26,6 +27,8 @@ from agent.tool_results import citations_from_tool_result, dedupe_citations, esc
 from core.trace import TraceRecorder
 from llm.base import ChatMessage, LLMProvider, LLMProviderError, ToolDefinition
 from mcp_client.client import MCPClient, MCPClientError, MCPToolError
+
+logger = logging.getLogger("hr_compass_ai.agent.orchestrator")
 
 DEFAULT_MAX_ITERATIONS = 10
 
@@ -106,6 +109,15 @@ class AgentOrchestrator:
             try:
                 response = await self.llm.chat(messages, tools=tools)
             except LLMProviderError as exc:
+                # The user-facing response below is intentionally generic
+                # (never exposes provider internals), so this is the
+                # server-side record of *why*. A provider that logs its own
+                # sanitized detail (e.g. GroqProvider: exception type, HTTP
+                # status code, API error code, model) will already have
+                # logged that above this line; this guarantees every LLM
+                # failure is visible in server logs even for a provider
+                # that doesn't do its own logging.
+                logger.error("LLM provider error during agent turn: %s", exc)
                 trace.record_decision(f"LLM provider error: {exc}", escalation="llm_unavailable")
                 return AgentResponse(
                     answer="I'm having trouble reaching the language model right now. Please try again shortly.",
