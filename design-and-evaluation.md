@@ -960,6 +960,130 @@ both for manual testing and for a screen recording. Built with CSS flexbox
 and a single narrow-viewport media query so it stays usable at typical
 laptop-recording resolutions.
 
+### 7.10 Efficiency, citation precision, latency, and retry (production fix)
+
+A live production trace of the PTO workflow (EMP-1001, "three days of PTO
+next week") showed the agent reach the right answer, but only after
+roughly 8 MCP tool calls -- several redundant, reworded
+`search_policy_documents` calls on the same PTO topic -- and the *final*
+Groq call in that turn then failed. Investigating this (see the note on
+what could and couldn't actually be determined, below) led to five related
+changes, all generic and none hard-coded to PTO or to this example:
+
+- **Reduce redundant searches (prompt, rule 3b in `agent/prompts.py`):**
+  `search_policy_documents` already returns `has_sufficient_evidence`;
+  the model wasn't being told to act on it. Rule 3b now says: once a
+  search comes back sufficient and on-topic, use it (or fetch the exact
+  section by name) and move on, rather than re-searching the same topic
+  with a reworded query. This is prompt guidance, not an orchestrator
+  branch -- whether a live model actually follows it is a live-validation
+  concern this offline suite cannot settle, consistent with every other
+  prompt-only fix in this section.
+- **Exact-repeat-call deduplication (`agent/orchestrator.py`,
+  `tool_call_cache`):** a narrow, purely mechanical safety net underneath
+  the prompt fix above. If the model calls the exact same tool with the
+  exact same arguments twice in one run, the second call is served from an
+  in-memory cache instead of hitting the MCP server again (still recorded
+  in the trace, marked as a cache hit, `duration_ms=0`). This only catches
+  literal repeats, not "slightly reworded" ones -- judging near-duplicate
+  relevance is exactly the kind of semantic call this project deliberately
+  leaves to the model rather than hard-coding. Never applied to
+  `create_mock_hr_ticket` or `draft_hr_email` (`_NON_IDEMPOTENT_TOOLS`):
+  a real, if synthetic, side effect or a fresh-prose request must never be
+  silently skipped.
+- **Citation precision (`agent/tool_results.py`,
+  `_filter_relevant_hits`/`CITATION_RELATIVE_SCORE_THRESHOLD`):**
+  `search_policy_documents` returns its full top-k regardless of how much
+  weaker the 2nd-5th hits are than the 1st, and the agent used to turn
+  every one of them into a citation -- so an unrelated equipment- or
+  holiday-schedule chunk that merely filled out the remaining top-k slots
+  could show up as a citation on a PTO answer. Citations (and, separately,
+  the trace's `result_summary`) now only include hits scoring at least
+  `CITATION_RELATIVE_SCORE_THRESHOLD` (0.75) of that call's own best
+  score -- a *relative*, per-call threshold, not an absolute or
+  topic-specific one, so it applies identically to every
+  `search_policy_documents` call regardless of subject. The single best
+  hit always survives (its ratio to itself is 1.0), so a call that finds
+  nothing good still cites its best available match rather than nothing.
+  Multi-document citation recall is preserved by construction: this
+  project's real multi-document evidence (the required remote-work demo,
+  Section 6/9.2) comes from *separate*, `document_id`-scoped calls, each
+  of which trivially clears its own bar; two comparably strong hits within
+  a single unscoped call also both survive. `get_policy_section` (one
+  exact, named section -- no ambiguity) and `check_policy_compliance`
+  (citations from `mcp_server.compliance.gather_citations`'s own small set
+  of targeted, scenario-specific queries, not a broad top-k dump) are
+  unaffected. Proven with hand-constructed, realistically-separated scores
+  in `tests/test_tool_results.py`, not against the real hashing-backend
+  retriever used elsewhere in this suite -- see that file's docstring for
+  why: the hashing backend's topic separation is documented elsewhere in
+  this project as intentionally weak (a dependency-free bag-of-words
+  fallback), so it isn't a meaningful way to prove this *filtering logic*
+  is correct independent of embedding quality.
+- **Smaller LLM-facing context (`agent/tool_results.py`,
+  `trim_tool_result_for_llm`):** every tool result is JSON-dumped into the
+  conversation and resent, in full, on every subsequent LLM turn --
+  several tool calls into one run, this resending compounds
+  (`O(n^2)` in total tokens sent across a turn's full call sequence, not
+  `O(n)`), which is the concrete mechanism by which "~8 tool calls" can
+  make the *last* request in that sequence meaningfully larger than the
+  first. The copy of a tool result appended to the conversation now: for
+  `search_policy_documents`, is narrowed to the same relevance-filtered
+  hits used for citations (the model never even sees, and never pays
+  token cost for, a hit already judged irrelevant); for both
+  `search_policy_documents` and `get_policy_section`, drops `source_path`
+  (a filesystem path the model has no use for -- citation source paths
+  are captured separately, from the *original* untrimmed result, before
+  trimming). The full, untrimmed result is still what
+  `summarize_tool_result`, `citations_from_tool_result`, and the
+  operational trace use.
+- **Bounded retry for transient Groq failures only
+  (`llm/groq_provider.py`):** `GroqProvider.chat()` now retries a timeout,
+  a bare connection error, or a rate limit (`openai.APIConnectionError` or
+  `openai.RateLimitError`, which covers `APITimeoutError` as a subclass)
+  up to `DEFAULT_MAX_RETRIES=2` additional times, honoring the API's own
+  `Retry-After` header when present and otherwise backing off
+  exponentially from `DEFAULT_RETRY_BASE_DELAY_SECONDS=1.0`s. Never
+  retried: `AuthenticationError` (a bad key is bad on every attempt) or
+  the generic `APIError` catch-all, which is what a permanent 4xx --
+  an invalid model name, or a context-length-exceeded request -- surfaces
+  as; retrying an unchanged oversized/invalid request fails identically
+  every time, so the fix for that case is a smaller/corrected request
+  (the citation-filtering and payload-trimming changes above), not a
+  retry. Every attempt, successful or not, is timed; a failed attempt's
+  sanitized server log line (`_log_provider_error`, already added in an
+  earlier fix) now also carries `attempt=N/M` and `duration_ms`, so a
+  future occurrence's actual log line will show, definitively, whether it
+  hung near the timeout or failed instantly.
+- **Latency instrumentation (`core/trace.py`, `TraceStep.duration_ms`):**
+  every LLM turn (`agent/orchestrator.py` records one "decision" step per
+  `self.llm.chat()` call) and every MCP tool call (`record_tool_call`) now
+  carries how long it took, in the client-visible trace -- rendered in the
+  web UI's "Agent Activity" panel (`app/static/index.html`) alongside each
+  step. A cache-hit repeat call (above) shows `duration_ms=0` explicitly,
+  distinguishing "no real round trip occurred" from "a fast one did."
+
+**What could and couldn't be determined about the specific failure:** this
+development environment has no access to this project's actual Render
+production logs, so the *exact* logged failure category for that one
+request (timeout vs. rate limit vs. context-length-exceeded vs. something
+else) could not be read and is not claimed here. What the code review
+above does establish: (1) the described symptom -- many tool calls
+succeeding, then specifically the *last, largest* LLM call in the same
+turn failing -- is exactly the signature a growing, repeatedly-resent
+conversation produces, since total tokens sent are cumulative and
+monotonically increasing across a turn's calls; (2) the two most
+plausible categories given that signature are a Groq free-tier
+requests/tokens-per-minute rate limit (`rate_limited`) or a
+context-length-exceeded 400 (`api_error`), both of which the sanitized
+logging already added (see the earlier "log Groq/LLM provider errors"
+fix) would show unambiguously via `status_code`/`error_code` on the next
+occurrence; (3) every fix above shrinks the accumulated request size or
+the number of calls that contribute to it, which mitigates both candidate
+causes regardless of which one it actually was. This is stated plainly
+rather than implied otherwise, per this project's standing rule against
+claiming a verification that did not occur.
+
 ## 8. Testing
 
 `pytest` (131 tests total, all passing).

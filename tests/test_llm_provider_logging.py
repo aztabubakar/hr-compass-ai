@@ -5,8 +5,11 @@ user-facing behavior) without ever being logged server-side (the actual
 defect). These tests prove:
 
 1. `GroqProvider.chat()` logs a sanitized error record (exception type,
-   HTTP status code, API error code, model, message) for every openai
-   exception category it handles, without ever logging the API key.
+   HTTP status code, API error code, model, attempt count, duration, and
+   message) for every openai exception category it handles, without ever
+   logging the API key. Tests in this section use `max_retries=0` (a
+   single attempt) so they test the *logging format*, not retry behavior
+   -- retry behavior has its own section below.
 2. `_redact()` strips a secret/bearer token out of arbitrary text.
 3. `AgentOrchestrator.run()` itself logs an ERROR when the LLM provider
    raises, independent of which provider implementation it's driving --
@@ -14,15 +17,21 @@ defect). These tests prove:
    changed.
 4. The user-facing graceful failure message and `escalated`/trace
    behavior are unchanged by any of this.
+5. Bounded retry/backoff applies only to transient failures (timeout,
+   rate limit, connection error) and never to permanent ones
+   (authentication, or the generic 4xx/5xx catch-all that covers things
+   like an invalid model name or a context-length-exceeded request).
 
 No real network call is made anywhere in this file -- the openai client's
 `chat.completions.create` is monkeypatched to raise a real, pre-built
-`openai` exception instance, never invoked over the network.
+`openai` exception instance (or a scripted sequence of them), never
+invoked over the network.
 """
 from __future__ import annotations
 
 import json
 import logging
+from types import SimpleNamespace
 
 import anyio
 import openai
@@ -82,8 +91,14 @@ def test_redact_handles_none_and_empty() -> None:
 # ---------------------------------------------------------------------------
 # GroqProvider.chat() sanitized logging
 # ---------------------------------------------------------------------------
-def _provider() -> GroqProvider:
-    return GroqProvider(api_key=FAKE_API_KEY, model="llama-3.3-70b-versatile")
+def _provider(max_retries: int = 0, retry_base_delay_seconds: float = 0.0) -> GroqProvider:
+    # max_retries=0 by default: these tests check the sanitized-logging
+    # *format* for a single failed attempt, not retry behavior (see the
+    # dedicated "Retry/backoff" section below for that).
+    return GroqProvider(
+        api_key=FAKE_API_KEY, model="llama-3.3-70b-versatile",
+        max_retries=max_retries, retry_base_delay_seconds=retry_base_delay_seconds,
+    )
 
 
 @pytest.mark.parametrize(
@@ -165,6 +180,137 @@ def test_provider_never_logs_the_api_key_even_if_it_appears_in_the_error_body(ca
 
     assert FAKE_API_KEY not in caplog.text
     assert "[REDACTED]" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Retry/backoff: only for transient failures, bounded, never for permanent ones
+# ---------------------------------------------------------------------------
+def _fake_success_response(content: str) -> object:
+    """A minimal duck-typed stand-in for the openai SDK's ChatCompletion
+    response shape -- only what `_from_openai_message` actually reads
+    (`choices[0].message.content`/`.tool_calls`, `choices[0].finish_reason`)."""
+    message = SimpleNamespace(content=content, tool_calls=None)
+    choice = SimpleNamespace(message=message, finish_reason="stop")
+    return SimpleNamespace(choices=[choice])
+
+
+def test_rate_limit_error_is_retried_and_eventually_succeeds(caplog) -> None:
+    provider = _provider(max_retries=2, retry_base_delay_seconds=0.01)
+    calls = {"count": 0}
+
+    async def _flaky(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] <= 2:
+            raise _status_error(openai.RateLimitError, 429, "Rate limit reached", code="rate_limit_exceeded")
+        return _fake_success_response("All good now.")
+
+    provider._client.chat.completions.create = _flaky  # type: ignore[method-assign]
+
+    async def body():
+        return await provider.chat([])
+
+    with caplog.at_level(logging.ERROR, logger="hr_compass_ai.llm.groq"):
+        result = anyio.run(body)
+
+    assert result.message.content == "All good now."
+    assert calls["count"] == 3  # 2 failed attempts + 1 successful retry
+    assert len(caplog.records) == 2  # only the 2 failed attempts are logged as errors
+    assert all("rate_limited" in r.message for r in caplog.records)
+
+
+def test_rate_limit_error_exhausts_retries_and_raises(caplog) -> None:
+    provider = _provider(max_retries=1, retry_base_delay_seconds=0.01)
+    exc = _status_error(openai.RateLimitError, 429, "Rate limit reached", code="rate_limit_exceeded")
+
+    async def _always_fails(*args, **kwargs):
+        raise exc
+
+    provider._client.chat.completions.create = _always_fails  # type: ignore[method-assign]
+
+    async def body():
+        with pytest.raises(LLMProviderError, match="rate limit"):
+            await provider.chat([])
+
+    with caplog.at_level(logging.ERROR, logger="hr_compass_ai.llm.groq"):
+        anyio.run(body)
+
+    assert len(caplog.records) == 2  # max_retries=1 -> 2 total attempts, both logged
+    assert "attempt=1/2" in caplog.records[0].message
+    assert "attempt=2/2" in caplog.records[1].message
+
+
+def test_connection_error_is_retried(caplog) -> None:
+    provider = _provider(max_retries=1, retry_base_delay_seconds=0.01)
+    calls = {"count": 0}
+
+    async def _flaky(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise openai.APIConnectionError(request=None)
+        return _fake_success_response("Recovered.")
+
+    provider._client.chat.completions.create = _flaky  # type: ignore[method-assign]
+
+    async def body():
+        return await provider.chat([])
+
+    with caplog.at_level(logging.ERROR, logger="hr_compass_ai.llm.groq"):
+        result = anyio.run(body)
+
+    assert result.message.content == "Recovered."
+    assert calls["count"] == 2
+    assert len(caplog.records) == 1
+    assert "connection_error" in caplog.records[0].message
+
+
+def test_authentication_error_is_never_retried(caplog) -> None:
+    # Even with retries configured, a bad key is bad on every attempt --
+    # retrying it wastes time and produces identical failures.
+    provider = _provider(max_retries=2, retry_base_delay_seconds=0.01)
+    calls = {"count": 0}
+
+    async def _always_fails(*args, **kwargs):
+        calls["count"] += 1
+        raise _status_error(openai.AuthenticationError, 401, "Invalid API Key", code="invalid_api_key")
+
+    provider._client.chat.completions.create = _always_fails  # type: ignore[method-assign]
+
+    async def body():
+        with pytest.raises(LLMProviderError, match="authentication failed"):
+            await provider.chat([])
+
+    with caplog.at_level(logging.ERROR, logger="hr_compass_ai.llm.groq"):
+        anyio.run(body)
+
+    assert calls["count"] == 1  # no retry attempted
+    assert len(caplog.records) == 1
+    assert "attempt=1/3" in caplog.records[0].message
+
+
+def test_context_length_exceeded_style_error_is_never_retried(caplog) -> None:
+    # A permanent 4xx (invalid model, or a request too large for the
+    # model's context window) surfaces as a generic APIError/BadRequestError
+    # -- retrying the same oversized request would fail identically.
+    provider = _provider(max_retries=2, retry_base_delay_seconds=0.01)
+    calls = {"count": 0}
+
+    async def _always_fails(*args, **kwargs):
+        calls["count"] += 1
+        raise _status_error(openai.BadRequestError, 400, "This model's maximum context length is 8192 tokens.",
+                             code="context_length_exceeded")
+
+    provider._client.chat.completions.create = _always_fails  # type: ignore[method-assign]
+
+    async def body():
+        with pytest.raises(LLMProviderError):
+            await provider.chat([])
+
+    with caplog.at_level(logging.ERROR, logger="hr_compass_ai.llm.groq"):
+        anyio.run(body)
+
+    assert calls["count"] == 1  # no retry attempted
+    assert len(caplog.records) == 1
+    assert "context_length_exceeded" in caplog.records[0].message
 
 
 # ---------------------------------------------------------------------------

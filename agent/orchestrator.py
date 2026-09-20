@@ -20,11 +20,18 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 
 from agent.prompts import SYSTEM_PROMPT
 from agent.schemas import AgentResponse, Citation
-from agent.tool_results import citations_from_tool_result, dedupe_citations, escalation_from_tool_result, summarize_tool_result
+from agent.tool_results import (
+    citations_from_tool_result,
+    dedupe_citations,
+    escalation_from_tool_result,
+    summarize_tool_result,
+    trim_tool_result_for_llm,
+)
 from core.trace import TraceRecorder
 from llm.base import ChatMessage, LLMProvider, LLMProviderError, ToolDefinition
 from mcp_client.client import MCPClient, MCPClientError, MCPToolError
@@ -39,6 +46,14 @@ DEFAULT_MAX_ITERATIONS = 10
 # action-like tool") only needs to be added here to get the same
 # code-enforced confirmation gate, not a new branch of logic.
 _CONFIRMATION_GATED_TOOLS = {"create_mock_hr_ticket"}
+
+# Tools never safe to silently answer from a cached prior call within the
+# same run: create_mock_hr_ticket has a real (if synthetic) side effect,
+# and draft_hr_email's whole point is producing fresh prose each time it's
+# asked for. Every other tool is a pure read (or, for check_policy_compliance,
+# a pure evaluation of the arguments given) and is safe to deduplicate --
+# see `tool_call_cache`, a local to `AgentOrchestrator.run()`, below.
+_NON_IDEMPOTENT_TOOLS = {"create_mock_hr_ticket", "draft_hr_email"}
 
 _UNAVAILABLE_MESSAGE = (
     "I'm having trouble reaching HR systems right now, so I can't complete this "
@@ -132,11 +147,25 @@ class AgentOrchestrator:
         messages.append(ChatMessage(role="user", content=user_message))
 
         collected_citations: list[Citation] = []
+        # Per-run memo of (tool_name, canonical arguments) -> raw result, for
+        # exact-repeat calls only (see _NON_IDEMPOTENT_TOOLS). A narrow,
+        # purely mechanical safety net underneath the prompt guidance (rule
+        # 3b) that asks the model not to re-search a topic it already has
+        # sufficient evidence for: this catches the case where the model
+        # asks for the literal same tool+arguments twice, without needing to
+        # understand *why* that's wasteful. It does not catch "slightly
+        # reworded" repeat queries -- that's what rule 3b is for -- since
+        # judging near-duplicate relevance is exactly the kind of semantic
+        # call this orchestrator deliberately leaves to the model, not a
+        # hard-coded heuristic here.
+        tool_call_cache: dict[tuple[str, str], dict] = {}
 
         for _ in range(self.max_iterations):
+            llm_start = time.perf_counter()
             try:
                 response = await self.llm.chat(messages, tools=tools)
             except LLMProviderError as exc:
+                llm_duration_ms = (time.perf_counter() - llm_start) * 1000
                 # The user-facing response below is intentionally generic
                 # (never exposes provider internals), so this is the
                 # server-side record of *why*. A provider that logs its own
@@ -145,7 +174,7 @@ class AgentOrchestrator:
                 # logged that above this line; this guarantees every LLM
                 # failure is visible in server logs even for a provider
                 # that doesn't do its own logging.
-                logger.error("LLM provider error during agent turn: %s", exc)
+                logger.error("LLM provider error during agent turn (after %.0fms): %s", llm_duration_ms, exc)
                 # The trace is returned to, and rendered by, the client's
                 # "Agent Activity" panel -- unlike the log line above, it
                 # must never carry the raw provider exception text (which
@@ -154,16 +183,19 @@ class AgentOrchestrator:
                 trace.record_decision(
                     "LLM provider error occurred; unable to reach the language model.",
                     escalation="llm_unavailable",
+                    duration_ms=llm_duration_ms,
                 )
                 return AgentResponse(
                     answer="I'm having trouble reaching the language model right now. Please try again shortly.",
                     citations=collected_citations, snippets=[c.snippet for c in collected_citations],
                     trace=trace.as_list(), escalated=True,
                 )
+            llm_duration_ms = (time.perf_counter() - llm_start) * 1000
 
             if not response.message.tool_calls:
                 answer_text = response.message.content or ""
                 requires_clarification, requires_confirmation, answer = _parse_control_prefix(answer_text)
+                trace.record_decision("Model turn: produced a final answer.", duration_ms=llm_duration_ms)
                 escalated = any(step.escalation for step in trace.steps)
                 return AgentResponse(
                     answer=answer,
@@ -175,6 +207,10 @@ class AgentOrchestrator:
                     escalated=escalated,
                 )
 
+            trace.record_decision(
+                f"Model turn: requested {len(response.message.tool_calls)} tool call(s).",
+                duration_ms=llm_duration_ms,
+            )
             messages.append(response.message)
             try:
                 # Each tool call in this batch is handled independently: a
@@ -200,25 +236,50 @@ class AgentOrchestrator:
                         # so the model (and, in the response, the user) sees
                         # exactly what would happen instead.
                         arguments = {**arguments, "confirmed": False}
+
+                    cache_key = None
+                    if tool_call.name not in _NON_IDEMPOTENT_TOOLS:
+                        cache_key = (tool_call.name, json.dumps(arguments, sort_keys=True))
+
+                    if cache_key is not None and cache_key in tool_call_cache:
+                        result = tool_call_cache[cache_key]
+                        summary = summarize_tool_result(tool_call.name, result) + " (repeat call; cached result reused, not re-fetched)"
+                        sources = [f"{c.document_id} §{c.section}" for c in citations_from_tool_result(tool_call.name, result)]
+                        trace.record_tool_call(
+                            tool_call.name, arguments, status="success", result_summary=summary,
+                            sources=sources, escalation=escalation_from_tool_result(tool_call.name, result),
+                            duration_ms=0.0,
+                        )
+                        messages.append(ChatMessage(role="tool", tool_call_id=tool_call.id, name=tool_call.name,
+                                                     content=json.dumps(trim_tool_result_for_llm(tool_call.name, result))))
+                        continue
+
+                    tool_start = time.perf_counter()
                     try:
                         result = await self.mcp_client.call_tool(tool_call.name, arguments)
                     except MCPToolError as exc:
+                        tool_duration_ms = (time.perf_counter() - tool_start) * 1000
                         trace.record_tool_call(tool_call.name, arguments, status="error",
-                                                result_summary=exc.message)
+                                                result_summary=exc.message, duration_ms=tool_duration_ms)
                         messages.append(ChatMessage(role="tool", tool_call_id=tool_call.id, name=tool_call.name,
                                                      content=json.dumps({"error": exc.message})))
                         continue
+                    tool_duration_ms = (time.perf_counter() - tool_start) * 1000
+
+                    if cache_key is not None:
+                        tool_call_cache[cache_key] = result
 
                     summary = summarize_tool_result(tool_call.name, result)
                     sources = [f"{c.document_id} §{c.section}" for c in citations_from_tool_result(tool_call.name, result)]
                     trace.record_tool_call(
                         tool_call.name, arguments, status="success", result_summary=summary,
                         sources=sources, escalation=escalation_from_tool_result(tool_call.name, result),
+                        duration_ms=tool_duration_ms,
                     )
                     collected_citations.extend(citations_from_tool_result(tool_call.name, result))
                     collected_citations = dedupe_citations(collected_citations)
                     messages.append(ChatMessage(role="tool", tool_call_id=tool_call.id, name=tool_call.name,
-                                                 content=json.dumps(result)))
+                                                 content=json.dumps(trim_tool_result_for_llm(tool_call.name, result))))
             except MCPClientError as exc:
                 trace.record_decision(f"MCP transport failure: {exc}", escalation="mcp_unavailable")
                 return AgentResponse(

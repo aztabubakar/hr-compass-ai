@@ -336,6 +336,7 @@ function renderTrace(trace) {
         ${args ? `<div class="args">${escapeHtml(args)}</div>` : ''}
         <div class="summary">${escapeHtml(step.result_summary || '')}</div>
         ${step.escalation ? `<div class="args">escalation: ${escapeHtml(step.escalation)}</div>` : ''}
+        ${step.duration_ms != null ? `<div class="args">${Math.round(step.duration_ms)} ms</div>` : ''}
       </div>
     </div>`;
   }).join('');

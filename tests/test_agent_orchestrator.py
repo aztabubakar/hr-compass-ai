@@ -605,6 +605,117 @@ def test_citations_propagate_from_tool_results_with_correct_fields(mcp_server_en
 
 
 # ---------------------------------------------------------------------------
+# Redundant tool-call reduction: an exact-repeat call is served from a
+# per-run cache instead of hitting the MCP server again. A narrow,
+# mechanical safety net -- the primary lever against a model re-searching
+# the same topic with reworded queries is prompt guidance (rule 3b), which
+# this offline harness cannot itself validate (see design-and-evaluation.md).
+# ---------------------------------------------------------------------------
+def test_exact_duplicate_tool_call_is_served_from_cache(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("search_policy_documents", {"query": "PTO request notice", "document_id": "POL-PTO-001", "top_k": 3}),
+        # A model that (incorrectly) repeats the identical call.
+        tool_call_turn("search_policy_documents", {"query": "PTO request notice", "document_id": "POL-PTO-001", "top_k": 3}),
+        final_turn("Per POL-PTO-001, PTO requests need manager approval and advance notice."),
+    ])
+    result = _run(mcp_server_env, fake, "What is the PTO request process?")
+
+    search_steps = [s for s in result.trace if s["tool"] == "search_policy_documents"]
+    assert len(search_steps) == 2  # the model's second call is still recorded in the trace...
+    assert search_steps[0]["duration_ms"] > 0  # ...but only the first one did real work...
+    assert search_steps[1]["duration_ms"] == 0.0  # ...the second was served from cache
+    assert "cached result reused" in search_steps[1]["result_summary"]
+    # Citations aren't duplicated by the repeat call.
+    pto_citations = [c for c in result.citations if c.document_id == "POL-PTO-001"]
+    assert len(pto_citations) == len({(c.section, c.snippet[:80]) for c in pto_citations})
+
+
+def test_different_arguments_are_not_treated_as_duplicates(mcp_server_env: dict[str, str]) -> None:
+    # Sanity check the cache key is specific: two calls to the same tool
+    # with genuinely different arguments must both actually execute.
+    fake = FakeLLMProvider([
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1001"}),
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1002"}),
+        final_turn("Looked up both employees."),
+    ])
+    result = _run(mcp_server_env, fake, "Compare EMP-1001 and EMP-1002.")
+
+    lookup_steps = [s for s in result.trace if s["tool"] == "lookup_employee_profile"]
+    assert len(lookup_steps) == 2
+    assert all(s["duration_ms"] > 0 for s in lookup_steps)  # neither was a cache hit
+
+
+def test_action_tools_are_never_deduplicated(mcp_server_env: dict[str, str]) -> None:
+    # create_mock_hr_ticket must never be silently answered from a cached
+    # prior call, even with identical arguments -- each call is a real (if
+    # synthetic) decision point gated by the confirmation rule, not a pure
+    # read safe to memoize.
+    fake = FakeLLMProvider([
+        tool_call_turn("create_mock_hr_ticket", {
+            "employee_id": "EMP-1001", "category": "Payroll", "summary": "test", "confirmed": True,
+        }),
+        tool_call_turn("create_mock_hr_ticket", {
+            "employee_id": "EMP-1001", "category": "Payroll", "summary": "test", "confirmed": True,
+        }),
+        final_turn("Done."),
+    ])
+    result = _run(mcp_server_env, fake, "Yes, please proceed.", prior_turn_requires_confirmation=True)
+
+    ticket_steps = [s for s in result.trace if s["tool"] == "create_mock_hr_ticket"]
+    assert len(ticket_steps) == 2
+    assert all("cached result reused" not in s["result_summary"] for s in ticket_steps)
+
+
+# ---------------------------------------------------------------------------
+# Efficient PTO orchestration: a regression guard on tool-call count, per
+# the production trace showing ~8 MCP calls before a PTO answer. A
+# well-behaved (scripted, here) sequence needs at most one call per
+# distinct piece of evidence -- employee, balance, one on-topic policy
+# search, and the compliance check -- not repeated searches.
+# ---------------------------------------------------------------------------
+def test_pto_workflow_completes_in_a_bounded_number_of_efficient_tool_calls(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1001"}),
+        tool_call_turn("check_pto_balance", {"employee_id": "EMP-1001"}),
+        tool_call_turn("search_policy_documents", {"query": "PTO request notice and manager approval", "document_id": "POL-PTO-001", "top_k": 3}),
+        tool_call_turn("check_policy_compliance", {
+            "employee_id": "EMP-1001", "scenario_type": "pto_request",
+            "requested_days": 3, "notice_business_days": 3,
+        }),
+        final_turn("You have 48 hours (6 days) of PTO available, which covers 3 days of notice."),
+    ])
+    result = _run(mcp_server_env, fake, "My employee ID is EMP-1001. Can I take three days of PTO next week?")
+
+    tool_call_steps = [s for s in result.trace if s["type"] == "tool_call"]
+    # One call per distinct piece of evidence -- not the ~8 seen in the
+    # flagged production trace (which included repeated, reworded
+    # search_policy_documents calls on the same topic).
+    assert len(tool_call_steps) <= 5
+    assert [s["tool"] for s in tool_call_steps] == [
+        "lookup_employee_profile", "check_pto_balance", "search_policy_documents", "check_policy_compliance",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Latency instrumentation: every LLM turn and every MCP tool call records
+# how long it took.
+# ---------------------------------------------------------------------------
+def test_every_llm_turn_and_tool_call_records_duration(mcp_server_env: dict[str, str]) -> None:
+    fake = FakeLLMProvider([
+        tool_call_turn("search_policy_documents", {"query": "holiday schedule", "document_id": "POL-HOL-001", "top_k": 2}),
+        final_turn("Solara observes 10 fixed holidays, per POL-HOL-001."),
+    ])
+    result = _run(mcp_server_env, fake, "What is Solara's holiday policy?")
+
+    decision_steps = [s for s in result.trace if s["type"] == "decision"]
+    tool_call_steps = [s for s in result.trace if s["type"] == "tool_call"]
+    assert len(decision_steps) == 2  # one per LLM turn: tool-call-requesting, then final-answer
+    assert len(tool_call_steps) == 1
+    assert all(isinstance(s["duration_ms"], (int, float)) and s["duration_ms"] >= 0 for s in decision_steps)
+    assert all(isinstance(s["duration_ms"], (int, float)) and s["duration_ms"] >= 0 for s in tool_call_steps)
+
+
+# ---------------------------------------------------------------------------
 # MCP unavailable is handled gracefully (server never even starts)
 # ---------------------------------------------------------------------------
 def test_mcp_discovery_failure_returns_graceful_response() -> None:

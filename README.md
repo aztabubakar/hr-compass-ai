@@ -234,6 +234,16 @@ crashing. The automated test suite never needs a real key — it always uses
 `llm.fake_provider.FakeLLMProvider`, a deterministic scripted stand-in (see
 "Running tests" below).
 
+`GroqProvider` retries a timeout, connection error, or rate limit up to
+twice with backoff (honoring the API's `Retry-After` header when given);
+an invalid model, an auth failure, or a context-length-exceeded request is
+never retried, since retrying an unchanged bad request fails identically
+every time. Every LLM turn and MCP tool call is timed, and that latency is
+part of the operational trace shown in the "Agent Activity" panel. See
+`design-and-evaluation.md` section 7.10 for the full write-up, including
+what caused a production PTO request to need ~8 tool calls and how
+citation precision, LLM-payload size, and retry behavior were fixed.
+
 ## Running the web app
 
 ```bash
