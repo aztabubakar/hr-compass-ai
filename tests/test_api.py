@@ -22,6 +22,12 @@ from llm.fake_provider import FakeLLMProvider, final_turn, tool_call_turn
 def api_client(real_corpus_hashing_index_dir, monkeypatch):
     monkeypatch.setenv("EMBEDDING_BACKEND", "hashing")
     monkeypatch.setenv("RAG_INDEX_DIR", str(real_corpus_hashing_index_dir))
+    # Isolate from whatever LLM provider credentials happen to be set in the
+    # process environment (e.g. a deployment host with real GEMINI_API_KEY/
+    # GROQ_API_KEY configured) -- these tests assert the "no LLM configured"
+    # baseline and must see that regardless of the outer environment.
+    for var in ("LLM_PROVIDER", "GROQ_API_KEY", "GROQ_MODEL", "GEMINI_API_KEY", "GEMINI_MODEL"):
+        monkeypatch.delenv(var, raising=False)
     # raise_server_exceptions=False makes the test client behave like a real
     # deployed server: an exception that escapes every handler comes back
     # as an actual 500 HTTP response (via Starlette's ServerErrorMiddleware)

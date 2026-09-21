@@ -370,7 +370,11 @@ def test_non_dict_function_call_args_raise_a_clean_error() -> None:
 # ---------------------------------------------------------------------------
 # 9. Authentication/configuration failure
 # ---------------------------------------------------------------------------
-def test_missing_api_key_raises_config_error_at_construction() -> None:
+def test_missing_api_key_raises_config_error_at_construction(monkeypatch) -> None:
+    # api_key=None must raise, not silently fall back to a real key that
+    # happens to be set in the process environment (e.g. a deployment host
+    # with GEMINI_API_KEY configured) -- isolate from that here.
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(LLMConfigError, match="GEMINI_API_KEY"):
         GeminiProvider(api_key=None)
 
@@ -565,7 +569,8 @@ def test_llm_provider_env_still_selects_groq() -> None:
     assert isinstance(provider, GroqProvider)
 
 
-def test_gemini_selected_without_key_fails_clearly_not_silently() -> None:
+def test_gemini_selected_without_key_fails_clearly_not_silently(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     config = LLMConfig(provider="gemini", gemini_api_key=None)
     with pytest.raises(LLMConfigError, match="GEMINI_API_KEY"):
         get_provider(config)
