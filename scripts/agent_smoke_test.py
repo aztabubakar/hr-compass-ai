@@ -1,16 +1,18 @@
-"""Manual, live smoke test for the real Groq-backed agent.
+"""Manual, live smoke test for the real agent, backed by whichever LLM
+provider `LLM_PROVIDER` selects (Gemini or Groq).
 
     python -m scripts.agent_smoke_test
 
 This is a **manual** script, not part of the automated test suite, and is
-never run in CI: it requires `GROQ_API_KEY` to be set and makes real
-network calls to Groq. If `GROQ_API_KEY` is not set, it prints setup
-guidance and exits cleanly (exit code 0) rather than failing loudly —
-this script's job is to help a human verify the live path works, not to
-assert anything in an automated pipeline.
+never run in CI: it requires the configured provider's API key to be set
+(`GEMINI_API_KEY` or `GROQ_API_KEY`, matching `LLM_PROVIDER`) and makes
+real network calls. If it isn't set, it prints setup guidance and exits
+cleanly (exit code 0) rather than failing loudly — this script's job is to
+help a human verify the live path works, not to assert anything in an
+automated pipeline.
 
 It runs two turns against the real agent (real MCP server subprocess,
-real Groq-backed LLMProvider):
+real LLMProvider):
 
 1. A policy-only question, to check basic grounded retrieval.
 2. The PTO workflow scenario, to check the model chooses tools on its own
@@ -30,8 +32,31 @@ import anyio
 
 from agent.orchestrator import AgentOrchestrator
 from llm.base import LLMConfigError, LLMProviderError
-from llm.config import LLMConfig, get_provider
+from llm.config import LLMConfig, get_provider, is_llm_configured
 from mcp_client.client import MCPClient, MCPClientError
+
+_SETUP_GUIDANCE = {
+    "gemini": (
+        "GEMINI_API_KEY is not set, so this live smoke test cannot run.\n\n"
+        "To run it:\n"
+        "  1. Get a free API key at https://aistudio.google.com/apikey\n"
+        "  2. Copy .env.example to .env and set GEMINI_API_KEY (and optionally GEMINI_MODEL)\n"
+        "     or export GEMINI_API_KEY in your shell.\n"
+        "  3. Build the RAG index if you haven't: python -m rag.ingest\n"
+        "  4. Re-run: python -m scripts.agent_smoke_test\n\n"
+        "Exiting cleanly (this is expected/normal without a key)."
+    ),
+    "groq": (
+        "GROQ_API_KEY is not set, so this live smoke test cannot run.\n\n"
+        "To run it:\n"
+        "  1. Get a free API key at https://console.groq.com/keys\n"
+        "  2. Copy .env.example to .env and set GROQ_API_KEY (and optionally GROQ_MODEL)\n"
+        "     or export GROQ_API_KEY in your shell.\n"
+        "  3. Build the RAG index if you haven't: python -m rag.ingest\n"
+        "  4. Re-run: python -m scripts.agent_smoke_test\n\n"
+        "Exiting cleanly (this is expected/normal without a key)."
+    ),
+}
 
 
 def _print_result(label: str, result) -> None:
@@ -52,17 +77,12 @@ def _print_result(label: str, result) -> None:
 
 async def main() -> int:
     config = LLMConfig()
-    if config.provider == "groq" and not config.groq_api_key:
-        print(
-            "GROQ_API_KEY is not set, so this live smoke test cannot run.\n\n"
-            "To run it:\n"
-            "  1. Get a free API key at https://console.groq.com/keys\n"
-            "  2. Copy .env.example to .env and set GROQ_API_KEY (and optionally GROQ_MODEL)\n"
-            "     or export GROQ_API_KEY in your shell.\n"
-            "  3. Build the RAG index if you haven't: python -m rag.ingest\n"
-            "  4. Re-run: python -m scripts.agent_smoke_test\n\n"
-            "Exiting cleanly (this is expected/normal without a key)."
+    if not is_llm_configured(config):
+        guidance = _SETUP_GUIDANCE.get(
+            config.provider,
+            f"LLM_PROVIDER='{config.provider}' is not configured, so this live smoke test cannot run.",
         )
+        print(guidance)
         return 0
 
     try:

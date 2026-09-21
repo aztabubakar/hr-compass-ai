@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
+import anyio
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -48,6 +50,17 @@ logging.basicConfig(
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+# An end-to-end ceiling on a single /chat request, covering the whole
+# bounded agent loop (every LLM turn and MCP tool call in it), not just one
+# LLM call. Each individual LLM call already has its own provider-level
+# timeout (LLM_TIMEOUT_SECONDS) and small bounded retry, but a multi-turn
+# tool-calling loop can still add those up past what a browser tab (or a
+# grader) should ever have to wait on -- this is the backstop that
+# guarantees /chat always resolves one way or another, so the client's own
+# error handling (see app/static/index.html's sendMessage()) actually gets
+# a chance to run instead of hanging on a hung upstream call forever.
+AGENT_RUN_TIMEOUT_SECONDS = float(os.getenv("AGENT_RUN_TIMEOUT_SECONDS", "60"))
 
 
 @asynccontextmanager
@@ -167,12 +180,28 @@ async def chat(
     state = store.get_state(conversation_id)
 
     orchestrator = AgentOrchestrator(llm, client)
+    run_start = time.perf_counter()
     try:
-        result = await orchestrator.run(
-            payload.message,
-            history=state.history,
-            prior_turn_requires_confirmation=state.last_requires_confirmation,
+        with anyio.fail_after(AGENT_RUN_TIMEOUT_SECONDS):
+            result = await orchestrator.run(
+                payload.message,
+                history=state.history,
+                prior_turn_requires_confirmation=state.last_requires_confirmation,
+            )
+    except TimeoutError as exc:
+        # Terminate cleanly rather than hanging the request (and the
+        # browser's "thinking" state) indefinitely. Logged with enough
+        # detail to diagnose which conversation/provider stalled, but never
+        # a stack trace or secret to the client.
+        duration_ms = (time.perf_counter() - run_start) * 1000
+        logger.error(
+            "Agent run exceeded %.0fs timeout (conversation_id=%s, provider=%s, duration_ms=%.0f)",
+            AGENT_RUN_TIMEOUT_SECONDS, conversation_id, LLMConfig().provider, duration_ms,
         )
+        raise HTTPException(
+            status_code=504,
+            detail="HR Compass AI took too long to respond. Please try again.",
+        ) from exc
     except LLMProviderError as exc:
         # Defense in depth: AgentOrchestrator.run() already catches
         # LLMProviderError internally and returns a graceful AgentResponse,

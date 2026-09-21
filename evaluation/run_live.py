@@ -1,4 +1,5 @@
-"""Live, real-model evaluation run against the configured Groq model.
+"""Live, real-model evaluation run against whichever LLM provider
+`LLM_PROVIDER` selects (Gemini or Groq).
 
     python -m evaluation.run_live
     python -m evaluation.run_live --limit 5          # smaller subset during development
@@ -6,21 +7,23 @@
 
 Unlike `run_offline.py`, nothing here is scripted: each case's
 `user_input` (and `conversation_context`, if any) is handed to the real
-`AgentOrchestrator` backed by a real `GroqProvider`, which independently
-decides which MCP tools to call, in what order, and how to answer -- the
-same code path `app/main.py`'s `/chat` endpoint uses. Scoring against each
-case's `expected_tools`/`expected_policy_documents`/rubric is therefore a
-genuine (if still approximate -- see evaluation/README.md) measurement of
-how the live model actually behaves, not a self-fulfilling scripted proof
-like the offline run.
+`AgentOrchestrator` backed by a real provider (`GeminiProvider` or
+`GroqProvider`, per `LLM_PROVIDER` -- see `llm/config.py`), which
+independently decides which MCP tools to call, in what order, and how to
+answer -- the same code path `app/main.py`'s `/chat` endpoint uses. Scoring
+against each case's `expected_tools`/`expected_policy_documents`/rubric is
+therefore a genuine (if still approximate -- see evaluation/README.md)
+measurement of how the live model actually behaves, not a self-fulfilling
+scripted proof like the offline run. Exactly one provider is used for the
+whole run -- never mixed mid-run.
 
-Requires `GROQ_API_KEY` to be set (same as `scripts/agent_smoke_test.py`).
-If it isn't, this script prints setup guidance and exits cleanly (exit
-code 0) rather than failing -- it is a manual/optional tool, never run in
-CI. Requires the RAG index to already be built (`python -m rag.ingest`);
-it does not build one for you, since live evaluation is meant to run
-against the same index the real deployment would use, not a hermetic test
-copy.
+Requires the configured provider's API key to be set (`GEMINI_API_KEY` or
+`GROQ_API_KEY`, matching `LLM_PROVIDER`). If it isn't, this script prints
+setup guidance and exits cleanly (exit code 0) rather than failing -- it is
+a manual/optional tool, never run in CI. Requires the RAG index to already
+be built (`python -m rag.ingest`); it does not build one for you, since
+live evaluation is meant to run against the same index the real deployment
+would use, not a hermetic test copy.
 
 Does not store or print the API key anywhere. Any per-case provider error
 (timeout, rate limit, auth) is caught by `evaluation/evaluator.py` and
@@ -40,10 +43,33 @@ from evaluation.cases import EvalCase, load_cases
 from evaluation.evaluator import run_cases
 from evaluation.metrics import aggregate
 from llm.base import LLMConfigError
-from llm.config import LLMConfig, get_provider
+from llm.config import LLMConfig, get_provider, is_llm_configured
 from mcp_client.client import MCPClient, MCPClientError
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
+
+_SETUP_GUIDANCE = {
+    "gemini": (
+        "GEMINI_API_KEY is not set, so live evaluation cannot run.\n\n"
+        "To run it:\n"
+        "  1. Get a free API key at https://aistudio.google.com/apikey\n"
+        "  2. Copy .env.example to .env and set GEMINI_API_KEY (and optionally GEMINI_MODEL)\n"
+        "     or export GEMINI_API_KEY in your shell.\n"
+        "  3. Build the RAG index if you haven't: python -m rag.ingest\n"
+        "  4. Re-run: python -m evaluation.run_live\n\n"
+        "Exiting cleanly (this is expected/normal without a key)."
+    ),
+    "groq": (
+        "GROQ_API_KEY is not set, so live evaluation cannot run.\n\n"
+        "To run it:\n"
+        "  1. Get a free API key at https://console.groq.com/keys\n"
+        "  2. Copy .env.example to .env and set GROQ_API_KEY (and optionally GROQ_MODEL)\n"
+        "     or export GROQ_API_KEY in your shell.\n"
+        "  3. Build the RAG index if you haven't: python -m rag.ingest\n"
+        "  4. Re-run: python -m evaluation.run_live\n\n"
+        "Exiting cleanly (this is expected/normal without a key)."
+    ),
+}
 
 
 def _select_cases(all_cases: list[EvalCase], case_ids: list[str] | None, limit: int | None) -> list[EvalCase]:
@@ -80,17 +106,12 @@ def _print_report(report_dict: dict) -> None:
 
 async def _main(case_ids: list[str] | None, limit: int | None) -> int:
     config = LLMConfig()
-    if config.provider == "groq" and not config.groq_api_key:
-        print(
-            "GROQ_API_KEY is not set, so live evaluation cannot run.\n\n"
-            "To run it:\n"
-            "  1. Get a free API key at https://console.groq.com/keys\n"
-            "  2. Copy .env.example to .env and set GROQ_API_KEY (and optionally GROQ_MODEL)\n"
-            "     or export GROQ_API_KEY in your shell.\n"
-            "  3. Build the RAG index if you haven't: python -m rag.ingest\n"
-            "  4. Re-run: python -m evaluation.run_live\n\n"
-            "Exiting cleanly (this is expected/normal without a key)."
+    if not is_llm_configured(config):
+        guidance = _SETUP_GUIDANCE.get(
+            config.provider,
+            f"LLM_PROVIDER='{config.provider}' is not configured, so live evaluation cannot run.",
         )
+        print(guidance)
         return 0
 
     try:
@@ -127,7 +148,7 @@ async def _main(case_ids: list[str] | None, limit: int | None) -> int:
         "provider": config.provider,
         "model": llm.model,
         "temperature": config.temperature,
-        "note": "Real-model run against the configured Groq model. No API key is stored in this file.",
+        "note": f"Real-model run against the configured {config.provider} model. No API key is stored in this file.",
         "aggregate": report_dict,
         "results": [r.to_dict() for r in results],
     }, indent=2), encoding="utf-8")

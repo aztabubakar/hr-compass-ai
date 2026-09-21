@@ -30,6 +30,8 @@ class LLMConfig:
     provider: str = os.getenv("LLM_PROVIDER", "groq")
     groq_api_key: str | None = os.getenv("GROQ_API_KEY") or None
     groq_model: str | None = os.getenv("GROQ_MODEL") or None
+    gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or None
+    gemini_model: str | None = os.getenv("GEMINI_MODEL") or None
     # Low/near-deterministic by default: appropriate for HR policy answers,
     # where consistent, literal grounding matters more than creative variety.
     temperature: float = _env_float("LLM_TEMPERATURE", 0.2)
@@ -43,6 +45,8 @@ def is_llm_configured(config: LLMConfig | None = None) -> bool:
     config = config or LLMConfig()
     if config.provider == "groq":
         return bool(config.groq_api_key)
+    if config.provider == "gemini":
+        return bool(config.gemini_api_key)
     return False
 
 
@@ -60,4 +64,13 @@ def get_provider(config: LLMConfig | None = None) -> LLMProvider:
             temperature=config.temperature,
             timeout_seconds=config.timeout_seconds,
         )
-    raise LLMConfigError(f"Unknown LLM_PROVIDER '{config.provider}'. Supported providers: 'groq'.")
+    if config.provider == "gemini":
+        from llm.gemini_provider import GeminiProvider
+
+        return GeminiProvider(
+            api_key=config.gemini_api_key,
+            model=config.gemini_model,
+            temperature=config.temperature,
+            timeout_seconds=config.timeout_seconds,
+        )
+    raise LLMConfigError(f"Unknown LLM_PROVIDER '{config.provider}'. Supported providers: 'groq', 'gemini'.")

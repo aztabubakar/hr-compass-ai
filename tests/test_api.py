@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import os
 
+import anyio
 import pytest
 from fastapi.testclient import TestClient
 
+import app.main as app_main
 from app.main import app, get_llm_provider
+from llm.base import ChatMessage, LLMResponse
 from llm.fake_provider import FakeLLMProvider, final_turn, tool_call_turn
 
 
@@ -175,6 +178,27 @@ def test_llm_provider_failure_is_handled_gracefully_not_as_a_crash(api_client: T
     data = response.json()
     assert data["escalated"] is True
     assert data["answer"]
+
+
+def test_chat_timeout_returns_clean_504_and_never_hangs(api_client: TestClient, monkeypatch) -> None:
+    # A provider that never returns simulates a stuck/hung upstream call --
+    # the end-to-end agent-run timeout (app/main.py's AGENT_RUN_TIMEOUT_SECONDS)
+    # must still resolve the request instead of hanging it forever, so the
+    # client's own loading-state/error handling gets a chance to run.
+    monkeypatch.setattr(app_main, "AGENT_RUN_TIMEOUT_SECONDS", 0.05)
+
+    class _HangingLLMProvider:
+        model = "hanging-fake-model"
+
+        async def chat(self, messages: list[ChatMessage], tools=None) -> LLMResponse:
+            await anyio.sleep(10)
+            raise AssertionError("should have been cancelled by the timeout")
+
+    app.dependency_overrides[get_llm_provider] = lambda: _HangingLLMProvider()
+    response = api_client.post("/chat", json={"message": "hello"})
+    assert response.status_code == 504
+    assert "Traceback" not in response.text
+    assert response.json()["detail"]
 
 
 def test_genuinely_unexpected_error_is_caught_by_global_handler(api_client: TestClient) -> None:

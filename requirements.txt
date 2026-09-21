@@ -28,10 +28,24 @@
 # - anyio: structured-concurrency runtime used directly by the MCP client/server and agent
 #   orchestrator code (`anyio.run(...)`), and transitively required by `mcp` and `fastembed`.
 # - openai: the official OpenAI Python SDK, used as a thin, OpenAI-compatible HTTP client for
-#   Groq (this project's primary LLM provider) rather than a Groq-specific SDK. Groq (and most
-#   other free/low-cost inference providers) expose an OpenAI-compatible chat completions API,
-#   so this same client, pointed at a different `base_url`, is the natural way to add another
-#   provider later (see llm/groq_provider.py's module docstring).
+#   Groq (an alternative LLM provider -- see llm/groq_provider.py) rather than a Groq-specific
+#   SDK. Groq (and most other free/low-cost inference providers) expose an OpenAI-compatible
+#   chat completions API, so this same client, pointed at a different `base_url`, is the
+#   natural way to add another provider later (see llm/groq_provider.py's module docstring).
+# - google-genai: Google's current, actively-maintained Gemini Python SDK (not the older,
+#   deprecated `google-generativeai` package), used by llm/gemini_provider.py -- this
+#   project's primary/default LLM provider. Brings in google-auth (credential handling,
+#   unused when authenticating by API key but part of the SDK's dependency surface),
+#   pyasn1/pyasn1-modules (transitive, via google-auth's certificate parsing), distro (OS
+#   identification for the SDK's User-Agent header), and tenacity (used internally by the
+#   SDK's own HTTP layer; NOT what implements this project's retry policy -- see
+#   llm/gemini_provider.py's module docstring on why the SDK's own retries are explicitly
+#   disabled and a small bounded retry is implemented at the provider level instead).
+# - httpx: promoted here from the "transitive, do not import directly" section below --
+#   google-genai's async transport is httpx-based, and llm/gemini_provider.py imports it
+#   directly to catch `httpx.TimeoutException`/`ConnectError`/`NetworkError` for
+#   network-level failures the SDK's own `google.genai.errors.APIError` hierarchy doesn't
+#   cover (mirroring how llm/groq_provider.py catches `openai`'s equivalent exceptions).
 # - fastapi / uvicorn[standard]: the web API (/health, /chat, /api/tools) and ASGI server.
 
 numpy==2.4.6
@@ -47,6 +61,8 @@ pytest==9.1.1
 mcp==2.2.0
 anyio==4.15.1
 openai==3.14.1
+google-genai==2.24.0
+httpx==0.28.1
 fastapi==0.141.1
 uvicorn[standard]==0.53.0
 
@@ -63,16 +79,17 @@ charset-normalizer==3.5.1
 click==8.5.0
 cryptography==50.0.1
 defusedxml==0.7.1
+distro==1.9.0
 filelock==4.0.0
 flatbuffers==25.12.19
 fonttools==4.65.0
 fsspec==2026.7.0
+google-auth==2.58.0
 h11==0.16.0
 hf-xet==1.6.0
 httpcore==1.0.9
 httpcore2==2.13.0
 httptools==0.8.0
-httpx==0.28.1
 httpx2==2.13.0
 huggingface_hub==1.31.0
 idna==3.19
@@ -90,6 +107,8 @@ pillow==12.3.0
 pluggy==1.6.0
 protobuf==7.36.1
 py_rust_stemmers==0.1.8
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
 pycparser==3.0
 pydantic_core==2.46.5
 python-multipart==0.0.32
@@ -100,6 +119,7 @@ sniffio==1.3.1
 soupsieve==2.9.2
 sse-starlette==3.4.11
 starlette==1.6.0
+tenacity==9.1.4
 tokenizers==0.23.2
 tqdm==4.70.1
 truststore==0.10.4
@@ -108,4 +128,4 @@ typing_extensions==4.16.0
 urllib3==2.8.0
 uvloop==0.22.1
 watchfiles==1.2.0
-websockets==17.1
+websockets==16.1.1

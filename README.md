@@ -9,18 +9,20 @@ diagram (Mermaid + text) and component overview.
 **Project status: Phase 4 — evaluation, CI/CD, deployment configuration.**
 Phase 1 delivered the policy corpus, synthetic HR datasets, and RAG
 pipeline. Phase 2 added a real MCP server (8 tools) and MCP client. Phase 3
-added a real LLM-driven agent (Groq by default) that dynamically discovers
-and calls those MCP tools — choosing which ones and in what order itself,
-not from a hard-coded sequence — plus a FastAPI web app (`/health`,
-`/chat`, `/api/tools`) and a browser chat UI. Phase 4 added a 25-case
-evaluation harness (deterministic + live modes, a RAG top-k ablation),
-GitHub Actions CI (tests, MCP/app smoke tests, deterministic evaluation,
-test-gated deployment trigger), and Render deployment configuration.
-**All of that is complete in code and tests; actually deploying to Render
-and running the live-model evaluation both require resources (a Render
-account, a `GROQ_API_KEY`) not available in this development
-environment** — see `deployed.md` and `design-and-evaluation.md` section
-12 ("Remaining Work") for the precise, honest list of what's left.
+added a real LLM-driven agent (**Google Gemini** by default, Groq fully
+supported as an alternative — see "Configuring the LLM" below) that
+dynamically discovers and calls those MCP tools — choosing which ones and
+in what order itself, not from a hard-coded sequence — plus a FastAPI web
+app (`/health`, `/chat`, `/api/tools`) and a browser chat UI. Phase 4 added
+a 25-case evaluation harness (deterministic + live modes, a RAG top-k
+ablation), GitHub Actions CI (tests, MCP/app smoke tests, deterministic
+evaluation, test-gated deployment trigger), and Render deployment
+configuration. **All of that is complete in code and tests; actually
+deploying to Render and running the live-model evaluation both require
+resources (a Render account, a `GEMINI_API_KEY`) not available in this
+development environment** — see `deployed.md` and
+`design-and-evaluation.md` section 12 ("Remaining Work") for the precise,
+honest list of what's left.
 
 ## The company
 
@@ -47,7 +49,7 @@ core/              Shared, dependency-light utilities (paths, operational trace 
 rag/               RAG ingestion + retrieval pipeline (Phase 1)
 mcp_server/        MCP server: 8 tools wrapping rag/ + mock_data/ (Phase 2)
 mcp_client/        Async MCP client (Phase 2)
-llm/               Provider-agnostic LLM abstraction (Groq default, FakeLLMProvider for tests) (Phase 3)
+llm/               Provider-agnostic LLM abstraction (Gemini default, Groq alternative, FakeLLMProvider for tests) (Phase 3)
 agent/             LLM agent orchestrator: bounded tool-calling loop, prompts, structured output (Phase 3)
 app/               FastAPI web app (/health, /chat, /api/tools) + browser chat UI (Phase 3)
 scripts/           Deterministic demo workflows + MCP/app/agent/deployment smoke tests (Phase 2/3/4)
@@ -214,35 +216,62 @@ Each prints a JSON operational trace (see `core/trace.py`) and the final
 `check_policy_compliance` result, including policy citations spanning
 multiple documents for the remote-work case.
 
-## Configuring the LLM (Groq)
+## Configuring the LLM (Gemini / Groq)
 
-The agent needs a real LLM to run. This project uses [Groq](https://groq.com)
-by default (a free-tier-friendly, fast inference provider) via a thin
-provider abstraction (`llm/`) designed so another OpenAI-compatible
-provider can be added later without touching `agent/`.
+The agent needs a real LLM to run, via a thin provider abstraction (`llm/`)
+so `agent/` never depends on a specific vendor SDK — set `LLM_PROVIDER` to
+pick one, no code changes needed.
+
+**Gemini (default/primary in production):**
+
+```bash
+# 1. Get a free API key: https://aistudio.google.com/apikey
+# 2. Copy .env.example to .env and set:
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your-key-here
+# GEMINI_MODEL is optional; defaults to gemini-2.5-flash-lite if unset.
+```
+
+**Groq (fully supported alternative):**
 
 ```bash
 # 1. Get a free API key: https://console.groq.com/keys
 # 2. Copy .env.example to .env and set:
+LLM_PROVIDER=groq
 GROQ_API_KEY=your-key-here
 # GROQ_MODEL is optional; a sensible current default is used if unset.
 ```
 
-Without `GROQ_API_KEY` set, the app still starts and `/health` still works
-(`llm_configured: false`); `/chat` returns a clean `503` instead of
-crashing. The automated test suite never needs a real key — it always uses
+Without the selected provider's API key set, the app still starts and
+`/health` still works (`llm_configured: false`, `provider` reflects
+`LLM_PROVIDER`); `/chat` returns a clean `503` instead of crashing, and
+picking an unrecognized `LLM_PROVIDER` value fails clearly at startup
+rather than silently falling back to another provider. The automated test
+suite never needs a real key — it always uses
 `llm.fake_provider.FakeLLMProvider`, a deterministic scripted stand-in (see
 "Running tests" below).
 
-`GroqProvider` retries a timeout, connection error, or rate limit up to
-twice with backoff (honoring the API's `Retry-After` header when given);
-an invalid model, an auth failure, or a context-length-exceeded request is
-never retried, since retrying an unchanged bad request fails identically
-every time. Every LLM turn and MCP tool call is timed, and that latency is
-part of the operational trace shown in the "Agent Activity" panel. See
-`design-and-evaluation.md` section 7.10 for the full write-up, including
-what caused a production PTO request to need ~8 tool calls and how
-citation precision, LLM-payload size, and retry behavior were fixed.
+Both `GeminiProvider` and `GroqProvider` retry a timeout, connection
+error, or rate limit/quota error up to twice with backoff (honoring the
+API's `Retry-After` header when given); an invalid request, an auth
+failure, or a context-length-exceeded request is never retried, since
+retrying an unchanged bad request fails identically every time — and for
+Gemini specifically, the SDK's own built-in retry behavior is explicitly
+disabled (`retry_options=HttpRetryOptions(attempts=1)`) so the two retry
+layers can never stack into the kind of multi-minute-pending-request
+problem a naive integration would risk. Every LLM turn and MCP tool call
+is timed, and that latency is part of the operational trace shown in the
+"Agent Activity" panel. An end-to-end `AGENT_RUN_TIMEOUT_SECONDS` (default
+60s, see `.env.example`) bounds the whole `/chat` request — covering every
+LLM turn and tool call in the agent's bounded loop, not just one LLM
+call — so a stuck upstream call can never hang the request (or the
+browser's "thinking" state) indefinitely; it fails with a clean `504`
+instead. See `design-and-evaluation.md` section 7.10 for the full
+write-up on the Groq-era retry/latency work, including what caused a
+production PTO request to need ~8 tool calls and how citation precision,
+LLM-payload size, and retry behavior were fixed — the same fixes apply
+identically to Gemini, since they live in provider-agnostic code
+(`agent/tool_results.py`, `agent/orchestrator.py`).
 
 ## Running the web app
 
@@ -281,18 +310,18 @@ Try these in the chat UI (also listed there as clickable examples):
 ```bash
 python -m scripts.mcp_smoke_test          # MCP discovery + tool calls (CI-safe, no API key)
 python -m scripts.app_smoke_test          # FastAPI app-start + /health, /api/tools, / (CI-safe, no API key)
-python -m scripts.agent_smoke_test        # live agent test: real Groq call, needs GROQ_API_KEY
+python -m scripts.agent_smoke_test        # live agent test: real LLM call (Gemini/Groq per LLM_PROVIDER)
 python -m scripts.deployment_smoke_test <url>   # smoke test an already-deployed URL, e.g. on Render
 ```
 
 `scripts/mcp_smoke_test.py` and `scripts/app_smoke_test.py` are what
 `.github/workflows/ci.yml` runs on every push/PR — each builds its own
-hermetic hashing-backend RAG index, needs no `GROQ_API_KEY`, and exits
+hermetic hashing-backend RAG index, needs no LLM API key, and exits
 non-zero on failure so CI can gate on them. `scripts/agent_smoke_test.py`
-is the only one of the four that makes a real Groq call: it prints setup
-guidance and exits cleanly (code 0) if `GROQ_API_KEY` isn't set rather
-than failing, is meant for a human to run locally to sanity-check the
-live path, and is **never** run in CI. `scripts/deployment_smoke_test.py`
+is the only one of the four that makes a real LLM call: it prints setup
+guidance and exits cleanly (code 0) if the configured provider's API key
+isn't set rather than failing, is meant for a human to run locally to
+sanity-check the live path, and is **never** run in CI. `scripts/deployment_smoke_test.py`
 takes a base URL (see "Deploying to Render" below) and checks `/`,
 `/health`, and `/api/tools`; pass `--test-chat` to also exercise `POST
 /chat`, gated on that deployment's own `/health` reporting
@@ -313,15 +342,23 @@ agent-orchestration tests proving genuine model-driven tool selection for
 every required behavior, plus 11 FastAPI endpoint tests), and 14 from
 Phase 4 (13 covering the evaluation harness itself — case loading, scoring
 rules, and a handful of cases run through the real orchestrator/MCP layer
-— plus 1 new `/health` degraded-status test).
+— plus 1 new `/health` degraded-status test). 219 tests pass as of the
+Gemini migration, the difference made up of `tests/test_gemini_provider.py`
+(29 tests covering `GeminiProvider` end to end against mocked
+`google-genai` objects — see its module docstring for the full scenario
+list) plus a handful of smaller additions elsewhere (e.g. the `/chat`
+end-to-end timeout test in `tests/test_api.py`).
 
 The suite is fully offline and deterministic: it builds a real index over
 the actual Solara Dynamics corpus once per session using the hashing
 embedding backend (never fastembed/network), every MCP-level test spawns a
 genuine `mcp_server.server` subprocess over stdio, and every agent-level
-test uses `llm.fake_provider.FakeLLMProvider` — never a real Groq call — so
-the whole suite needs no API key and no network access beyond what was
-already true in Phase 2. Expect the full run to take roughly 60-80 seconds,
+test uses `llm.fake_provider.FakeLLMProvider` — never a real Gemini/Groq
+call — so the whole suite needs no API key and no network access beyond
+what was already true in Phase 2 (this also includes
+`tests/test_gemini_provider.py`, which uses hand-built `google-genai`
+response/exception objects, never a live Gemini call). Expect the full run
+to take roughly 60-80 seconds,
 mostly subprocess spin-up time. A `network` pytest marker is reserved for
 an opt-in test that exercises the real `fastembed` model download; it is
 excluded by default (see `pytest.ini`) since this project's build/CI
@@ -354,7 +391,7 @@ thresholds these scenarios are designed to exercise.
 ```bash
 python -m evaluation.run_offline          # deterministic, offline, CI-safe (25 cases)
 python -m evaluation.run_offline --max-cases 5   # fast subset
-python -m evaluation.run_live             # real Groq model, requires GROQ_API_KEY (never run in CI)
+python -m evaluation.run_live             # real LLM model (Gemini/Groq per LLM_PROVIDER), never run in CI
 python -m evaluation.ablation             # RAG retrieval ablation: top_k=3 vs top_k=5
 ```
 
@@ -368,7 +405,7 @@ tool-selection accuracy, workflow completion, clarification/escalation
 accuracy, action-safety pass rate, and p50/p95 latency. **`run_offline`
 proves the agent/MCP/safety architecture works — it does not measure real
 LLM quality, since its "model" is a scripted `FakeLLMProvider`; only
-`run_live` (not run in this development environment — no `GROQ_API_KEY`
+`run_live` (not run in this development environment — no `GEMINI_API_KEY`
 was available) measures that.** Full methodology, metrics definitions,
 documented limitations, and a manual live-model validation checklist are
 in `evaluation/README.md`; results and analysis are in
@@ -379,7 +416,7 @@ in `evaluation/README.md`; results and analysis are in
 `.github/workflows/ci.yml` runs on every push/PR: installs dependencies,
 an import/build check, the full `pytest` suite, `scripts/mcp_smoke_test.py`,
 `scripts/app_smoke_test.py`, `evaluation.run_offline`, and
-`evaluation.ablation` — all offline, no `GROQ_API_KEY` or other external
+`evaluation.ablation` — all offline, no LLM API key or other external
 service required. A second `deploy` job triggers a Render deploy hook only
 after the test job succeeds and only on a push to `main`, so deployment is
 genuinely gated on tests passing once the one-time setup in the job's
@@ -400,8 +437,10 @@ one process — see `design-and-evaluation.md` section 9.4-9.5 for the full
 design, including why the RAG index is built at Render *build* time
 (`buildCommand: pip install -r requirements.txt && python -m rag.ingest`)
 rather than on first request. To deploy: connect this repo in the Render
-dashboard (it will detect `render.yaml`), set `GROQ_API_KEY` in the
-Render dashboard (never commit it), and once live, smoke-test it:
+dashboard (it will detect `render.yaml`), set `GEMINI_API_KEY` in the
+Render dashboard (never commit it; changing it later requires a manual
+redeploy/restart for the new value to take effect), and once live,
+smoke-test it:
 
 ```bash
 python -m scripts.deployment_smoke_test https://your-app.onrender.com
@@ -411,7 +450,7 @@ python -m scripts.deployment_smoke_test https://your-app.onrender.com
 deployed URL, date, and commit once this has been done — see
 `design-and-evaluation.md` section 12 for exactly what deployment steps
 remain (none of them can be completed from this development environment,
-which has no Render account or `GROQ_API_KEY`).
+which has no Render account or `GEMINI_API_KEY`).
 
 ## Requirements coverage
 
