@@ -24,6 +24,16 @@ class ToolCall:
     id: str
     name: str
     arguments: dict
+    # Opaque, provider-specific data that must be replayed byte-for-byte
+    # alongside this exact tool call on its next round trip to the same
+    # provider -- e.g. Gemini 3's `thought_signature`, a required-but-opaque
+    # value attached to the model's function-call Part (see
+    # llm/gemini_provider.py's module docstring). Never inspected, decoded,
+    # rewritten, or logged in full by agent/ or any provider other than the
+    # one that set it; `None` (the default) for every provider that has
+    # nothing to attach here, including every existing GroqProvider/
+    # FakeLLMProvider tool call.
+    provider_metadata: dict | None = None
 
 
 @dataclass

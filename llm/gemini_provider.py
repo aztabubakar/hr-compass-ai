@@ -17,6 +17,23 @@ raw JSON Schema dict directly -- so this adapter is a thin pass-through
 (name, description, schema) rather than a schema-rewriting layer. MCP
 remains the sole execution authority; no business logic is duplicated
 here.
+
+Gemini 3 models attach an opaque `thought_signature` to the response
+`Part` that carries a function call, and require that exact signature to
+be replayed on that same function-call Part when its result is sent back
+for the next turn -- omitting it fails multi-step tool calling with
+"Function call is missing a thought_signature in functionCall parts."
+`thought_signature` lives on `types.Part` itself (a sibling of
+`function_call`, not a field of `FunctionCall`), so it has to be carried
+alongside our own `ToolCall` explicitly: `_from_gemini_response` reads it
+off each function-call `Part` into `ToolCall.provider_metadata` (a
+provider-opaque field on the shared `llm.base.ToolCall`, unused by every
+other provider), and `_parts_for` reattaches it, unchanged, to the
+reconstructed `Part` when that same tool call is replayed as history. This
+is the smallest fix for the round trip: nothing here decodes, rewrites, or
+logs the signature's contents -- it is treated as an opaque blob the whole
+way through, exactly like Gemini's own docs describe it (not
+chain-of-thought).
 """
 from __future__ import annotations
 
@@ -100,8 +117,17 @@ def _parts_for(message: ChatMessage) -> list[types.Part]:
             id=message.tool_call_id, name=message.name, response=response_payload,
         ))]
     if message.tool_calls:
+        # thought_signature (see module docstring) lives on the Part, not
+        # on FunctionCall -- reattach it, unchanged, to the exact Part this
+        # tool call originally came from. `None` for a tool call that never
+        # had one (e.g. from GroqProvider/FakeLLMProvider history, or a
+        # Gemini call Gemini itself didn't attach one to) is passed through
+        # as-is; never fabricated.
         return [
-            types.Part(function_call=types.FunctionCall(id=tc.id, name=tc.name, args=tc.arguments))
+            types.Part(
+                function_call=types.FunctionCall(id=tc.id, name=tc.name, args=tc.arguments),
+                thought_signature=(tc.provider_metadata or {}).get("gemini_thought_signature"),
+            )
             for tc in message.tool_calls
         ]
     return [types.Part(text=message.content or "")]
@@ -159,11 +185,26 @@ def _from_gemini_response(response: types.GenerateContentResponse) -> LLMRespons
                     f"Gemini returned malformed function-call arguments for '{part.function_call.name}'."
                 )
             call_id = part.function_call.id or f"call_{uuid.uuid4().hex[:8]}"
-            tool_calls.append(ToolCall(id=call_id, name=part.function_call.name, arguments=args))
+            # Capture this Part's thought_signature (opaque bytes, or None
+            # if Gemini didn't attach one to this particular call) so it
+            # can be replayed unchanged on this exact tool call -- see the
+            # module docstring. Never decoded/inspected/logged in full.
+            provider_metadata = (
+                {"gemini_thought_signature": part.thought_signature} if part.thought_signature else None
+            )
+            tool_calls.append(ToolCall(
+                id=call_id, name=part.function_call.name, arguments=args, provider_metadata=provider_metadata,
+            ))
         elif part.text:
             text_parts.append(part.text)
 
     if tool_calls:
+        # Presence/absence only -- never the signature value itself (see
+        # ToolCall.provider_metadata's docstring in llm/base.py).
+        signed = sum(1 for tc in tool_calls if tc.provider_metadata)
+        logger.debug(
+            "Gemini requested %d tool call(s), %d carrying a thought_signature.", len(tool_calls), signed,
+        )
         return LLMResponse(
             message=ChatMessage(role="assistant", tool_calls=tool_calls), finish_reason="tool_calls", raw=response,
         )

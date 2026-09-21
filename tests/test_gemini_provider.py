@@ -31,6 +31,19 @@ Covers (see the migration task's 18 required scenarios):
       not re-tested here (see tests/test_llm_provider_logging.py).
   18. existing FakeLLMProvider tests still pass -- likewise (see
       tests/test_agent_orchestrator.py, tests/test_evaluation.py).
+
+Plus a regression suite (functions prefixed test_a_ through test_i_, and
+test_integration_*) for the Gemini 3 `thought_signature` production bug:
+Gemini 3 attaches an opaque `thought_signature` to a function-call `Part`
+and requires it replayed exactly on the next request, or multi-step tool
+calling fails with "Function call is missing a thought_signature in
+functionCall parts." Covers: (A) single-call capture+replay, (B) sequential
+calls preserving both signatures, (C) parallel calls preserving per-part
+order/placement (including calls Gemini didn't sign), (D) plain text
+responses unaffected, (E) real MCP execution with a signed call, (H) the
+create_mock_hr_ticket confirmation gate still enforced, (I) sanitized logs
+never expose a signature's value, and two full orchestrator+MCP
+integration reproductions of the exact production scenarios.
 """
 from __future__ import annotations
 
@@ -72,6 +85,20 @@ def _tool_call_response(*calls: tuple[str, dict]) -> types.GenerateContentRespon
     return types.GenerateContentResponse(candidates=[types.Candidate(
         content=types.Content(role="model", parts=[
             types.Part(function_call=types.FunctionCall(name=name, args=args)) for name, args in calls
+        ]),
+        finish_reason=types.FinishReason.STOP,
+    )])
+
+
+def _tool_call_response_signed(*calls: tuple[str, dict, bytes | None]) -> types.GenerateContentResponse:
+    """Like `_tool_call_response`, but each call also carries the
+    `thought_signature` Gemini would attach to that Part (or None for a
+    call Gemini didn't sign) -- used by the thought-signature regression
+    tests below."""
+    return types.GenerateContentResponse(candidates=[types.Candidate(
+        content=types.Content(role="model", parts=[
+            types.Part(function_call=types.FunctionCall(name=name, args=args), thought_signature=sig)
+            for name, args, sig in calls
         ]),
         finish_reason=types.FinishReason.STOP,
     )])
@@ -653,3 +680,336 @@ def test_confirmation_gate_downgrades_a_gemini_driven_ticket_creation(mcp_server
     result = anyio.run(body)
     ticket_step = next(s for s in result.trace if s.get("tool") == "create_mock_hr_ticket")
     assert ticket_step["arguments"]["confirmed"] is False  # downgraded, exactly like the Groq path
+
+
+# ---------------------------------------------------------------------------
+# Regression: preserve Gemini 3 `thought_signature` across multi-step tool
+# calling. Production symptom: "Function call is missing a thought_signature
+# in functionCall parts." -- caused by `_from_gemini_response` reading only
+# `function_call.name`/`.args` off each Part and discarding the sibling
+# `thought_signature` field, and `_parts_for` then rebuilding a brand-new
+# `FunctionCall` Part with no signature when replaying history. See the
+# module docstring of llm/gemini_provider.py for the full explanation.
+#
+# Covers (A)-(I) below plus the two end-to-end integration scenarios.
+# ---------------------------------------------------------------------------
+SIGNATURE_A = b"\x01\x02\xffopaque-signature-A-not-real-cleartext"
+SIGNATURE_B = b"\x03\x04\xfeopaque-signature-B-not-real-cleartext"
+SIGNATURE_C = b"\x05\x06\xfdopaque-signature-C-not-real-cleartext"
+
+
+# --- A. one function call with a thought_signature: same signature replayed ---
+def test_a_single_tool_call_signature_is_captured_and_replayed_exactly() -> None:
+    provider = _provider()
+
+    async def _generate(*args, **kwargs):
+        return _tool_call_response_signed(("search_policy_documents", {"query": "holiday policy"}, SIGNATURE_A))
+
+    provider._client.aio.models.generate_content = _generate  # type: ignore[method-assign]
+
+    async def body():
+        return await provider.chat([ChatMessage(role="user", content="What is the holiday policy?")])
+
+    result = anyio.run(body)
+    call = result.message.tool_calls[0]
+    # Captured, unmodified, on the ToolCall -- never fabricated, never decoded.
+    assert call.provider_metadata == {"gemini_thought_signature": SIGNATURE_A}
+
+    captured = {}
+
+    async def _generate_next(*, model, contents, config):
+        captured["contents"] = contents
+        return _text_response("Solara observes 10 fixed holidays.")
+
+    provider._client.aio.models.generate_content = _generate_next  # type: ignore[method-assign]
+
+    async def body2():
+        history = [
+            ChatMessage(role="user", content="What is the holiday policy?"),
+            result.message,
+            ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content='{"results": []}'),
+        ]
+        return await provider.chat(history)
+
+    anyio.run(body2)
+    model_turn = captured["contents"][1]  # the replayed assistant/model turn
+    replayed_part = model_turn.parts[0]
+    assert replayed_part.function_call.name == "search_policy_documents"
+    # The exact same bytes Gemini originally sent -- not re-derived, not re-encoded by us.
+    assert replayed_part.thought_signature == SIGNATURE_A
+
+
+# --- B. sequential tool calls: signatures survive both steps ---
+def test_b_sequential_tool_calls_preserve_signatures_across_both_steps() -> None:
+    provider = _provider()
+    responses = [
+        _tool_call_response_signed(("lookup_employee_profile", {"employee_id": "EMP-1002"}, SIGNATURE_A)),
+        _tool_call_response_signed(("check_policy_compliance", {"employee_id": "EMP-1002", "scenario_type": "remote_work_request"}, SIGNATURE_B)),
+        _text_response("You're clear to work remotely from Colorado."),
+    ]
+    captured_calls = []
+
+    async def _generate(*, model, contents, config):
+        captured_calls.append(list(contents))
+        return responses.pop(0)
+
+    provider._client.aio.models.generate_content = _generate  # type: ignore[method-assign]
+
+    async def body():
+        history = [ChatMessage(role="user", content="EMP-1002, can I work from Colorado?")]
+
+        first = await provider.chat(history)
+        call_a = first.message.tool_calls[0]
+        history = history + [first.message, ChatMessage(
+            role="tool", tool_call_id=call_a.id, name=call_a.name, content='{"full_name": "Priya Natarajan"}',
+        )]
+
+        second = await provider.chat(history)
+        call_b = second.message.tool_calls[0]
+        history = history + [second.message, ChatMessage(
+            role="tool", tool_call_id=call_b.id, name=call_b.name, content='{"status": "requires_approval"}',
+        )]
+
+        return await provider.chat(history), call_a, call_b
+
+    result, call_a, call_b = anyio.run(body)
+    assert result.message.content == "You're clear to work remotely from Colorado."
+    assert call_a.provider_metadata == {"gemini_thought_signature": SIGNATURE_A}
+    assert call_b.provider_metadata == {"gemini_thought_signature": SIGNATURE_B}
+
+    # The third (final) call's history must carry BOTH replayed signatures,
+    # each on its own model turn, in order.
+    final_contents = captured_calls[2]
+    model_turns = [c for c in final_contents if c.role == "model"]
+    assert model_turns[0].parts[0].thought_signature == SIGNATURE_A
+    assert model_turns[1].parts[0].thought_signature == SIGNATURE_B
+
+
+# --- C. parallel function calls: order and per-part signature placement ---
+def test_c_parallel_tool_calls_preserve_order_and_per_part_signatures() -> None:
+    provider = _provider()
+
+    async def _generate(*args, **kwargs):
+        return _tool_call_response_signed(
+            ("lookup_employee_profile", {"employee_id": "EMP-1002"}, SIGNATURE_A),
+            ("check_pto_balance", {"employee_id": "EMP-1002"}, None),  # Gemini didn't sign this one
+            ("lookup_benefits_status", {"employee_id": "EMP-1002"}, SIGNATURE_C),
+        )
+
+    provider._client.aio.models.generate_content = _generate  # type: ignore[method-assign]
+
+    async def body():
+        return await provider.chat([ChatMessage(role="user", content="EMP-1002, tell me everything")])
+
+    result = anyio.run(body)
+    calls = result.message.tool_calls
+    assert [c.name for c in calls] == ["lookup_employee_profile", "check_pto_balance", "lookup_benefits_status"]
+    assert calls[0].provider_metadata == {"gemini_thought_signature": SIGNATURE_A}
+    assert calls[1].provider_metadata is None  # never fabricated for a call Gemini didn't sign
+    assert calls[2].provider_metadata == {"gemini_thought_signature": SIGNATURE_C}
+
+    captured = {}
+
+    async def _generate_next(*, model, contents, config):
+        captured["contents"] = contents
+        return _text_response("done")
+
+    provider._client.aio.models.generate_content = _generate_next  # type: ignore[method-assign]
+
+    async def body2():
+        history = [
+            ChatMessage(role="user", content="EMP-1002, tell me everything"),
+            result.message,
+            ChatMessage(role="tool", tool_call_id=calls[0].id, name=calls[0].name, content='{}'),
+            ChatMessage(role="tool", tool_call_id=calls[1].id, name=calls[1].name, content='{}'),
+            ChatMessage(role="tool", tool_call_id=calls[2].id, name=calls[2].name, content='{}'),
+        ]
+        return await provider.chat(history)
+
+    anyio.run(body2)
+    replayed_parts = captured["contents"][1].parts
+    assert [p.function_call.name for p in replayed_parts] == ["lookup_employee_profile", "check_pto_balance", "lookup_benefits_status"]
+    assert replayed_parts[0].thought_signature == SIGNATURE_A
+    assert replayed_parts[1].thought_signature is None
+    assert replayed_parts[2].thought_signature == SIGNATURE_C
+
+
+# --- D. plain text response (no tool call) is unaffected ---
+def test_d_text_only_response_has_no_tool_calls_or_signature_handling() -> None:
+    provider = _provider()
+
+    async def _generate(*args, **kwargs):
+        return _text_response("Solara observes 10 fixed holidays.")
+
+    provider._client.aio.models.generate_content = _generate  # type: ignore[method-assign]
+
+    async def body():
+        return await provider.chat([ChatMessage(role="user", content="What is the holiday policy?")])
+
+    result = anyio.run(body)
+    assert result.finish_reason == "stop"
+    assert result.message.tool_calls is None
+    assert result.message.content == "Solara observes 10 fixed holidays."
+
+
+# --- E. real MCP tool execution still works with a signed tool call ---
+def test_e_real_mcp_tool_execution_succeeds_with_a_signed_tool_call(mcp_server_env: dict[str, str]) -> None:
+    provider = _provider()
+    responses = [
+        _tool_call_response_signed(("search_policy_documents", {"query": "holiday policy", "top_k": 3}, SIGNATURE_A)),
+        _text_response("Solara observes 10 fixed holidays plus 2 floating holidays, per POL-HOL-001."),
+    ]
+
+    async def _generate(*args, **kwargs):
+        return responses.pop(0)
+
+    provider._client.aio.models.generate_content = _generate  # type: ignore[method-assign]
+
+    async def body():
+        async with MCPClient(env=mcp_server_env) as client:
+            orchestrator = AgentOrchestrator(provider, client)
+            return await orchestrator.run("What is Solara's paid holiday policy?")
+
+    result = anyio.run(body)
+    assert not result.escalated
+    assert result.answer == "Solara observes 10 fixed holidays plus 2 floating holidays, per POL-HOL-001."
+    assert result.citations  # the real MCP/RAG layer actually ran
+
+
+# --- F/G: existing Groq and FakeLLMProvider tests are covered by the full
+# suite (tests/test_llm_provider_logging.py, tests/test_agent_orchestrator.py,
+# tests/test_evaluation.py) -- not re-implemented here.
+
+
+# --- H. confirmation gate remains enforced even with a signed tool call ---
+def test_h_confirmation_gate_enforced_for_a_signed_ticket_creation_call(mcp_server_env: dict[str, str]) -> None:
+    provider = _provider()
+    responses = [
+        _tool_call_response_signed(("create_mock_hr_ticket", {
+            "employee_id": "EMP-1001", "category": "remote_work", "summary": "Remote work request", "confirmed": True,
+        }, SIGNATURE_A)),
+        _text_response("Done."),
+    ]
+
+    async def _generate(*args, **kwargs):
+        return responses.pop(0)
+
+    provider._client.aio.models.generate_content = _generate  # type: ignore[method-assign]
+
+    async def body():
+        async with MCPClient(env=mcp_server_env) as client:
+            orchestrator = AgentOrchestrator(provider, client)
+            return await orchestrator.run(
+                "Create an HR ticket for my remote-work request.",
+                prior_turn_requires_confirmation=False,
+            )
+
+    result = anyio.run(body)
+    ticket_step = next(s for s in result.trace if s.get("tool") == "create_mock_hr_ticket")
+    assert ticket_step["arguments"]["confirmed"] is False  # the signature carries no special authority
+
+
+# --- I. sanitized logs never expose the signature value ---
+def test_i_thought_signature_never_appears_in_logs(caplog) -> None:
+    provider = _provider()
+
+    async def _generate(*args, **kwargs):
+        return _tool_call_response_signed(("search_policy_documents", {"query": "holiday policy"}, SIGNATURE_A))
+
+    provider._client.aio.models.generate_content = _generate  # type: ignore[method-assign]
+
+    async def body():
+        return await provider.chat([ChatMessage(role="user", content="holiday policy")])
+
+    with caplog.at_level(logging.DEBUG, logger="hr_compass_ai.llm.gemini"):
+        result = anyio.run(body)
+
+    assert result.message.tool_calls[0].provider_metadata == {"gemini_thought_signature": SIGNATURE_A}
+    # Presence is logged (see llm/gemini_provider.py's debug line)...
+    assert "thought_signature" in caplog.text
+    # ...but never the raw bytes, and never a base64 rendering of them.
+    assert SIGNATURE_A not in caplog.text.encode("utf-8", errors="ignore")
+    import base64
+    assert base64.b64encode(SIGNATURE_A).decode("ascii") not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Integration regression (item 10): full orchestrator + real MCP round trip
+# ---------------------------------------------------------------------------
+def test_integration_policy_question_completes_with_a_preserved_signature(mcp_server_env: dict[str, str]) -> None:
+    """User: "What is Solara's paid holiday policy?" -- Gemini calls
+    search_policy_documents with a thought_signature, MCP returns real RAG
+    results, and Gemini's *next* request must carry that exact signature
+    back for the turn to complete -- reproducing, then proving fixed, the
+    production failure mode."""
+    provider = _provider()
+    captured_calls = []
+    responses = [
+        _tool_call_response_signed(("search_policy_documents", {"query": "paid holiday policy", "top_k": 3}, SIGNATURE_A)),
+        _text_response("Solara observes 10 fixed holidays plus 2 floating holidays, per POL-HOL-001."),
+    ]
+
+    async def _generate(*, model, contents, config):
+        captured_calls.append(list(contents))
+        return responses.pop(0)
+
+    provider._client.aio.models.generate_content = _generate  # type: ignore[method-assign]
+
+    async def body():
+        async with MCPClient(env=mcp_server_env) as client:
+            orchestrator = AgentOrchestrator(provider, client)
+            return await orchestrator.run("What is Solara's paid holiday policy?")
+
+    result = anyio.run(body)
+    assert not result.escalated
+    assert result.answer == "Solara observes 10 fixed holidays plus 2 floating holidays, per POL-HOL-001."
+    assert result.citations
+
+    # The second generate_content call is the one that would have failed in
+    # production -- assert its history actually carries the signature.
+    second_call_contents = captured_calls[1]
+    model_turn = next(c for c in second_call_contents if c.role == "model")
+    signed_parts = [p for p in model_turn.parts if p.function_call is not None]
+    assert signed_parts[0].thought_signature == SIGNATURE_A
+
+
+def test_integration_multi_step_remote_work_question_preserves_signatures_across_steps(
+    mcp_server_env: dict[str, str],
+) -> None:
+    """User: "I'm EMP-1002. Can I work from Colorado for six weeks?" --
+    multiple Gemini/MCP steps in one turn, each with its own signature."""
+    provider = _provider()
+    captured_calls = []
+    responses = [
+        _tool_call_response_signed(("lookup_employee_profile", {"employee_id": "EMP-1002"}, SIGNATURE_A)),
+        _tool_call_response_signed(("check_policy_compliance", {
+            "employee_id": "EMP-1002", "scenario_type": "remote_work_request",
+            "destination_state": "CO", "duration_calendar_days": 42,
+        }, SIGNATURE_B)),
+        _text_response("Working from Colorado for six weeks requires manager approval per POL-LOC-001."),
+    ]
+
+    async def _generate(*, model, contents, config):
+        captured_calls.append(list(contents))
+        return responses.pop(0)
+
+    provider._client.aio.models.generate_content = _generate  # type: ignore[method-assign]
+
+    async def body():
+        async with MCPClient(env=mcp_server_env) as client:
+            orchestrator = AgentOrchestrator(provider, client)
+            return await orchestrator.run("I'm EMP-1002. Can I work from Colorado for six weeks?")
+
+    result = anyio.run(body)
+    # Not asserting on `escalated` here: a real interstate remote-work
+    # compliance result legitimately sets escalation_required=True (manager
+    # approval needed) -- that's existing business logic, unrelated to what
+    # this test proves (signature preservation across multiple steps).
+    assert result.answer == "Working from Colorado for six weeks requires manager approval per POL-LOC-001."
+
+    # The final call's history must carry both prior steps' signatures.
+    final_call_contents = captured_calls[-1]
+    model_turns = [c for c in final_call_contents if c.role == "model"]
+    assert len(model_turns) == 2
+    assert model_turns[0].parts[0].thought_signature == SIGNATURE_A
+    assert model_turns[1].parts[0].thought_signature == SIGNATURE_B
