@@ -16,6 +16,16 @@ class Citation(BaseModel):
     section: str
     snippet: str
     source_path: str | None = None
+    # Which MCP tool produced this citation ("search_policy_documents",
+    # "get_policy_section", or "check_policy_compliance") -- never read by
+    # the UI or by scoring, only by agent/tool_results.py's
+    # attribute_citations for its exact-section-authority rule (a citation
+    # from get_policy_section names a section the model explicitly asked
+    # for by name, which is stronger evidence of intentional use than a
+    # section that merely turned up in a broader search_policy_documents
+    # top-k). Optional/defaulted so existing callers that construct a
+    # Citation without it (tests, any future tool) remain valid.
+    source_tool: str | None = None
 
 
 class AgentResponse(BaseModel):
