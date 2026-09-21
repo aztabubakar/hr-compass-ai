@@ -12,10 +12,10 @@ top-k ablation, and the manual live-model validation checklist.
 | `cases.json` | The 25 structured evaluation cases (data only). |
 | `cases.py` | Typed loader for `cases.json` (`EvalCase` pydantic model). |
 | `scripts.py` | Deterministic `FakeLLMProvider` tool-call scripts, one per case, used only by `run_offline.py`. |
-| `evaluator.py` | Shared harness: runs one case through the real `AgentOrchestrator` + real MCP client/server, regardless of which LLM provider backs it. |
+| `evaluator.py` | Shared harness: runs one case through the real `AgentOrchestrator` + real MCP client/server (`run_case`), or against a deployed instance's real `/chat` endpoint over HTTP (`run_case_http`) -- both produce the same `EvalResult` shape, scored by the same, unmodified `metrics.py`. |
 | `metrics.py` | Per-case scoring rules and aggregation into category/summary tables. |
 | `run_offline.py` | `python -m evaluation.run_offline` — deterministic, offline, CI-safe. |
-| `run_live.py` | `python -m evaluation.run_live` — real Groq model, requires `GROQ_API_KEY`. |
+| `run_live.py` | `python -m evaluation.run_live` — real Gemini/Groq model, requires an API key; or, with `EVAL_BASE_URL` set, a deployed instance's `/chat` endpoint instead (no local key or RAG index needed). Supports `--delay-between-cases` pacing and `--resume` checkpointing — see "Running" below. |
 | `ablation.py` | `python -m evaluation.ablation` — top_k=3 vs. top_k=5 retrieval comparison. |
 | `results/` | Timestamped JSON output from each run. |
 
@@ -172,16 +172,102 @@ proxy rather than a semantic judge (see Limitations).
 python -m evaluation.run_offline
 python -m evaluation.run_offline --max-cases 5   # fast subset
 
-# Live, real Groq model (requires GROQ_API_KEY; never run in CI):
+# Live, real model, LOCAL mode (requires GEMINI_API_KEY or GROQ_API_KEY,
+# matching LLM_PROVIDER; never run in CI; requires a local RAG index --
+# python -m rag.ingest):
 python -m evaluation.run_live
 python -m evaluation.run_live --limit 5
 python -m evaluation.run_live --cases EVAL-006 EVAL-008
+
+# Live, real model, DEPLOYED mode (evaluates a deployed instance's actual
+# /chat endpoint over HTTP instead -- no local key, MCP client, or RAG
+# index needed):
+EVAL_BASE_URL=https://hr-compass-ai-cosv.onrender.com \
+python -m evaluation.run_live --delay-between-cases 15
 
 # RAG top_k=3 vs top_k=5 ablation (offline, no API key needed):
 python -m evaluation.ablation
 ```
 
-All three write a timestamped JSON file to `evaluation/results/`.
+All of the above write a timestamped JSON file to `evaluation/results/`.
+
+### Local mode vs. deployed mode
+
+Both modes run the exact same 25 cases through the exact same scoring code
+(`metrics.score_case`/`metrics.aggregate`) — deployed mode is a second way
+to *produce* an `EvalResult`, not a second way to score one. What differs:
+
+- **What's under test.** Local mode constructs a local `AgentOrchestrator` +
+  `MCPClient` (a local MCP server subprocess, a local RAG index) and calls
+  the configured LLM provider directly. Deployed mode makes real HTTP
+  `POST /chat` requests against `EVAL_BASE_URL` and never constructs any of
+  that locally — it evaluates whatever is actually running at that URL
+  (its own RAG index, its own MCP server, its own LLM key), which is the
+  only way to measure the real, hosted architecture rather than a
+  same-code-different-process stand-in for it.
+- **Latency.** Deployed-mode latency is wall-clock time around each HTTP
+  request — it deliberately includes network round trip, Render request
+  processing, LLM time, MCP time, RAG time, and any Render free-tier
+  cold-start (which can be 50+ seconds on an idle instance; the HTTP
+  client uses a 120s timeout for this reason). It is not comparable to
+  local-mode latency, which never leaves the evaluation process.
+- **No local RAG index required.** Deployed mode never touches
+  `rag_index/` or the local `EMBEDDING_BACKEND`/`GEMINI_API_KEY`/
+  `GROQ_API_KEY` configuration at all — useful in an environment (like a
+  sandboxed CI or Claude Code Cloud session) where the embedding model
+  can't be downloaded, but the actual deployed app already has a working
+  index.
+- **Multi-turn context (`EVAL-015`, `EVAL-023`).** These two cases carry a
+  scripted `conversation_context`. Local mode injects it directly as
+  history. Deployed mode cannot do that (`/chat` only accepts a message
+  and a `conversation_id`, not injected history) — instead it *replays*
+  each prior turn's real user message through `/chat` first, under the
+  same `conversation_id` as the case's evaluated turn, and lets the
+  deployed app generate its own real intermediate response. This is a
+  genuine methodological difference, not just plumbing: deployed mode is
+  measuring how the live app actually handles that two-turn conversation,
+  which is not guaranteed to reproduce the scripted assistant turn local
+  mode assumes. Every case uses a conversation_id unique to it (and to
+  that run), so state can never leak between cases.
+- **Provider/model in results metadata.** Local mode records the exact
+  configured provider and model. Deployed mode records the provider name
+  only (read from the deployed app's existing `/health` endpoint) — its
+  exact model isn't exposed by `/health`, so `model` is `null` in a
+  deployed-mode results file. No API key or other secret is ever written
+  to a results or checkpoint file in either mode.
+
+### Pacing and resuming a rate-limited run
+
+A full 25-case run needs roughly 46–65 real `generate_content` calls
+(varies with how many tool-call rounds the live model needs per case),
+which can exceed a free-tier provider's per-minute quota well before the
+run finishes — in either mode, since deployed mode's calls still go through
+the same rate-limited provider, just from the deployed app instead of
+locally.
+
+`--delay-between-cases SECONDS` (default `0`) sleeps *after* each completed
+case, outside that case's measured latency — a pacing knob only, with no
+effect on scoring, expected results, or the recorded latency. **This does
+not guarantee avoiding a provider's rate limit** — it only spaces requests
+out; a sustained per-minute cap can still be exceeded depending on how many
+tool-call rounds each case needs.
+
+Every run writes an incremental checkpoint file after each completed case
+(`evaluation/results/live_checkpoint_<timestamp>.json` by default, or
+whatever `--resume` points at). If a run is interrupted — quota
+exhaustion, a timeout, a crash — continue it with:
+
+```bash
+python -m evaluation.run_live --resume evaluation/results/live_checkpoint_20260101T000000Z.json
+```
+
+Every case_id already present in that checkpoint is skipped (never
+re-run), including one that previously ended in `error` — resuming
+*continues* a run past a failure, it does not retry it. To force a
+specific case to be re-attempted, remove its entry from the checkpoint
+file first. The final results file, written once all selected cases are
+done, aggregates the full combined set (resumed + newly run) through the
+same unmodified scoring code as any other run.
 
 ## Live model validation checklist
 
