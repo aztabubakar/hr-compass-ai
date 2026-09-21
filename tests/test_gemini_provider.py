@@ -69,7 +69,7 @@ FAKE_API_KEY = "AIzaSy_test_super_secret_value_do_not_log_me"
 
 def _provider(max_retries: int = 0, retry_base_delay_seconds: float = 0.0) -> GeminiProvider:
     return GeminiProvider(
-        api_key=FAKE_API_KEY, model="gemini-3.8-flash",
+        api_key=FAKE_API_KEY, model="gemini-2.5-flash-lite",
         max_retries=max_retries, retry_base_delay_seconds=retry_base_delay_seconds,
     )
 
@@ -557,10 +557,10 @@ def test_connection_error_is_retried_and_recovers() -> None:
 # 13. Provider selection via LLM_PROVIDER
 # ---------------------------------------------------------------------------
 def test_llm_provider_env_selects_gemini(monkeypatch) -> None:
-    config = LLMConfig(provider="gemini", gemini_api_key=FAKE_API_KEY, gemini_model="gemini-3.8-flash")
+    config = LLMConfig(provider="gemini", gemini_api_key=FAKE_API_KEY, gemini_model="gemini-2.5-flash-lite")
     provider = get_provider(config)
     assert isinstance(provider, GeminiProvider)
-    assert provider.model == "gemini-3.8-flash"
+    assert provider.model == "gemini-2.5-flash-lite"
 
 
 def test_llm_provider_env_still_selects_groq() -> None:

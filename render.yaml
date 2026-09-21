@@ -31,7 +31,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false  # set manually in the Render dashboard; never committed
       - key: GEMINI_MODEL
-        value: gemini-3.8-flash  # optional; leave unset to use llm/gemini_provider.py's DEFAULT_GEMINI_MODEL
+        value: gemini-2.5-flash-lite  # optional; leave unset to use llm/gemini_provider.py's DEFAULT_GEMINI_MODEL
       # Groq remains fully supported (llm/groq_provider.py, llm/config.py) --
       # set LLM_PROVIDER back to "groq" and fill these in to switch, no code
       # changes needed. Changing any of these requires a manual redeploy/

@@ -53,11 +53,12 @@ from llm.base import ChatMessage, LLMConfigError, LLMProvider, LLMProviderError,
 
 logger = logging.getLogger("hr_compass_ai.llm.gemini")
 
-# Overridable via GEMINI_MODEL; this default is a current (as of writing),
-# low-cost, tool-calling-capable Gemini model. A fallback default, not a
-# hard-coded requirement -- set GEMINI_MODEL to use a different one
-# without code changes.
-DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+# Overridable via GEMINI_MODEL; this default is the official Gemini 2.5
+# Flash-Lite model ID, chosen for free-tier quota headroom (10 RPM / 250K
+# TPM / 20 RPD, vs. a stricter free-tier quota on other Gemini models). A
+# fallback default, not a hard-coded requirement -- set GEMINI_MODEL to use
+# a different one without code changes.
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
