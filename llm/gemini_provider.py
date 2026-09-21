@@ -40,7 +40,7 @@ logger = logging.getLogger("hr_compass_ai.llm.gemini")
 # low-cost, tool-calling-capable Gemini model. A fallback default, not a
 # hard-coded requirement -- set GEMINI_MODEL to use a different one
 # without code changes.
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
