@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from agent.prompts import SYSTEM_PROMPT
 from agent.schemas import AgentResponse, Citation
 from agent.tool_results import (
+    attribute_citations,
     citations_from_tool_result,
     dedupe_citations,
     escalation_from_tool_result,
@@ -197,10 +198,20 @@ class AgentOrchestrator:
                 requires_clarification, requires_confirmation, answer = _parse_control_prefix(answer_text)
                 trace.record_decision("Model turn: produced a final answer.", duration_ms=llm_duration_ms)
                 escalated = any(step.escalation for step in trace.steps)
+                # Narrow the whole turn's accumulated candidate evidence down
+                # to what this final answer actually attributes a claim to
+                # (see attribute_citations's docstring) -- this is citation
+                # *precision*, distinct from citations_from_tool_result's own
+                # per-call relevance filtering, which only ever prunes one
+                # search's raw top-k noise, not evidence retrieved-but-unused
+                # across the whole turn. Uses `answer` (post CLARIFY:/CONFIRM:
+                # prefix stripping), not the raw `answer_text`, so a
+                # clarifying question's control prefix never affects matching.
+                final_citations = attribute_citations(answer, collected_citations)
                 return AgentResponse(
                     answer=answer,
-                    citations=collected_citations,
-                    snippets=[c.snippet for c in collected_citations],
+                    citations=final_citations,
+                    snippets=[c.snippet for c in final_citations],
                     trace=trace.as_list(),
                     requires_clarification=requires_clarification,
                     requires_confirmation=requires_confirmation,

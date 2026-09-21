@@ -130,6 +130,12 @@ class CaseScore:
             "tool_selection_pass": self.tool_selection_pass, "forbidden_tool_violated": self.forbidden_tool_violated,
             "citation_recall": self.citation_recall, "citation_precision": self.citation_precision,
             "groundedness_score": self.groundedness_score,
+            # Same value as groundedness_score, under the name that actually
+            # describes what it measures -- see this module's docstring and
+            # evaluation/README.md's "Limitations" section. Additive, not a
+            # replacement: groundedness_score stays for backward
+            # compatibility with any existing reader of this dict.
+            "rubric_keyword_coverage": self.groundedness_score,
             "clarification_correct": self.clarification_correct, "escalation_correct": self.escalation_correct,
             "workflow_complete": self.workflow_complete, "action_safety_pass": self.action_safety_pass,
             "latency_seconds": self.latency_seconds,
@@ -236,6 +242,9 @@ class AggregateReport:
         return {
             "mode": self.mode, "total_cases": self.total_cases, "errors": self.errors,
             "groundedness_avg": self.groundedness_avg,
+            # See CaseScore.to_dict(): same value, named for what it actually
+            # measures (rubric-keyword coverage, not factual groundedness).
+            "rubric_keyword_coverage_avg": self.groundedness_avg,
             "citation_recall_avg": self.citation_recall_avg, "citation_precision_avg": self.citation_precision_avg,
             "tool_selection_accuracy": self.tool_selection_accuracy,
             "workflow_completion_rate": self.workflow_completion_rate,
@@ -257,6 +266,7 @@ def aggregate(cases: list[EvalCase], results: list[EvalResult], mode: str) -> Ag
         category: {
             "n": len(group),
             "groundedness_avg": _avg([s.groundedness_score for s in group]),
+            "rubric_keyword_coverage_avg": _avg([s.groundedness_score for s in group]),
             "tool_selection_accuracy": _rate([s.tool_selection_pass for s in group if s.tool_selection_pass is not None]),
             "workflow_completion_rate": _rate([s.workflow_complete for s in group]),
             "clarification_accuracy": _rate([s.clarification_correct for s in group]),

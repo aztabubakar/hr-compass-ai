@@ -71,7 +71,13 @@ SCRIPTS: dict[str, list[LLMResponse]] = {
             "employee_id": "EMP-1002", "scenario_type": "remote_work_request",
             "destination_state": "Colorado", "duration_calendar_days": 42,
         }),
-        final_turn("Working from Colorado for six weeks (42 calendar days) exceeds the 30-calendar-day no-approval threshold, so it needs Payroll and People & Culture Team approval, per POL-LOC-001."),
+        final_turn(
+            "Working from Colorado for six weeks (42 calendar days) exceeds the 30-calendar-day "
+            "no-approval threshold under POL-LOC-001, so it needs Payroll and People & Culture Team "
+            "approval; this also exceeds the 20-business-day Work From Anywhere allowance in "
+            "POL-RWK-001, so it must be handled as a formal location change request rather than "
+            "informal remote work."
+        ),
     ],
     "EVAL-009": [
         tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1006"}),
@@ -119,7 +125,11 @@ SCRIPTS: dict[str, list[LLMResponse]] = {
             "employee_id": "EMP-1002", "scenario_type": "remote_work_request",
             "destination_state": "Colorado", "duration_calendar_days": 42,
         }),
-        final_turn("Working from Colorado for six weeks needs Payroll and People & Culture Team approval, per POL-LOC-001."),
+        final_turn(
+            "Working from Colorado for six weeks needs Payroll and People & Culture Team approval "
+            "under POL-LOC-001, and also exceeds the 20-business-day Work From Anywhere allowance in "
+            "POL-RWK-001, so this must be handled as a formal location change request."
+        ),
     ],
     "EVAL-016": [
         final_turn("CLARIFY: What is your employee ID?"),
