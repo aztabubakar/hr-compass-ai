@@ -316,6 +316,37 @@ file first. The final results file, written once all selected cases are
 done, aggregates the full combined set (resumed + newly run) through the
 same unmodified scoring code as any other run.
 
+### Running deployed mode from GitHub Actions
+
+Some environments (including Claude Code Cloud sessions) block outbound
+access to this project's Render hostname at the network-policy level, so
+deployed-mode evaluation can't always be run from wherever you happen to be
+working. `.github/workflows/live-evaluation.yml` runs the exact same
+deployed-mode command from a GitHub-hosted runner instead:
+
+**GitHub → Actions → Live Production Evaluation → Run workflow**
+
+It's manually triggered only (`workflow_dispatch`) — it never runs on a
+push or pull request, and is entirely separate from the always-on,
+fully-offline `ci.yml` pipeline. Before running the 25 cases it does a
+best-effort health check against the deployed app's `/health` endpoint
+(retrying for a couple of minutes) to wake a free-tier Render instance
+from a cold start, then runs:
+
+```bash
+EVAL_BASE_URL=https://hr-compass-ai-cosv.onrender.com \
+python -m evaluation.run_live --delay-between-cases 20
+```
+
+Needs no secrets — deployed mode never constructs a local LLM provider or
+MCPClient (see "Local mode vs. deployed mode" above), so no
+`GEMINI_API_KEY`/`GROQ_API_KEY` is required in the workflow. When the run
+finishes (or is interrupted), the workflow always uploads an artifact
+named **`hr-compass-live-evaluation`** containing the final results JSON
+and, if the run didn't complete all 25 cases, the checkpoint file needed
+to `--resume` it — download it from the workflow run's page (the
+Artifacts section at the bottom of the run's Summary tab).
+
 ## Live model validation checklist
 
 A manual checklist for validating the real Groq-backed agent end to end

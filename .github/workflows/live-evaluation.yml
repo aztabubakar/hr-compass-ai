@@ -1,0 +1,125 @@
+name: Live Production Evaluation
+
+# Manually triggered only -- never on push/pull_request (see ci.yml for the
+# normal, always-on, fully-offline CI pipeline, which this workflow does not
+# touch or replace). This runs the same 25 evaluation cases against the
+# *deployed* Render app's real /chat endpoint (evaluation/run_live.py's
+# EVAL_BASE_URL/"deployed mode" -- see evaluation/README.md's "Local mode vs.
+# deployed mode" section), which is the only way to measure the actual
+# hosted architecture -- Claude Code Cloud's own egress policy blocks this
+# Render hostname, so this workflow exists to run the same command from an
+# environment that can reach it.
+on:
+  workflow_dispatch: {}
+
+env:
+  RENDER_APP_URL: https://hr-compass-ai-cosv.onrender.com
+
+jobs:
+  evaluate:
+    name: Deployed live evaluation (25 cases)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # Same Python version and dependency installation as ci.yml -- no
+      # separate environment invented for this workflow.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # evaluation.run_live's "deployed mode" (EVAL_BASE_URL set) never
+      # constructs a local MCPClient, RAG index, or LLM provider -- every
+      # /chat call is a real HTTP request to the URL below, which is why no
+      # EMBEDDING_BACKEND/RAG_INDEX_DIR/GEMINI_API_KEY/GROQ_API_KEY is set
+      # anywhere in this workflow (see evaluation/run_live.py's `if
+      # base_url:` branch and evaluation/README.md). This job needs zero
+      # secrets.
+      - name: Wake and health-check the Render deployment
+        timeout-minutes: 10
+        run: |
+          url="${RENDER_APP_URL}/health"
+          echo "Checking $url -- a free-tier Render instance can take 50+ seconds to cold-start."
+          attempt=1
+          max_attempts=15
+          until [ "$attempt" -gt "$max_attempts" ]; do
+            status=$(curl -sS -o /dev/null -w "%{http_code}" -m 20 "$url" || echo "000")
+            echo "Attempt $attempt/$max_attempts: HTTP $status"
+            if [ "$status" = "200" ]; then
+              echo "Render app responded; proceeding to the evaluation."
+              break
+            fi
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "::warning::Health check never returned 200 after $max_attempts attempts. Proceeding anyway -- each evaluation case's own HTTP request has a generous timeout that can absorb a slow cold start."
+            fi
+            attempt=$((attempt + 1))
+            sleep 10
+          done
+
+      # The exact existing command, unmodified -- see evaluation/run_live.py
+      # and evaluation/README.md's "Deployed mode" / "Pacing and resuming a
+      # rate-limited run" sections for what this does and why the delay
+      # exists. Never fails the job outright: per-case failures (a Gemini
+      # 429, a Render timeout, a transport error) are caught into that
+      # case's EvalResult.error by evaluation/evaluator.py, not raised, so
+      # this step only exits non-zero on a genuinely unexpected failure --
+      # the steps below still run either way (`if: always()`).
+      - name: Run deployed live evaluation (25 cases)
+        timeout-minutes: 75
+        env:
+          EVAL_BASE_URL: ${{ env.RENDER_APP_URL }}
+        run: python -m evaluation.run_live --delay-between-cases 20
+
+      - name: Print evaluation summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import glob
+          import json
+          import os
+
+          files = sorted(
+              f for f in glob.glob("evaluation/results/live_*.json")
+              if "checkpoint" not in os.path.basename(f)
+          )
+          if not files:
+              print("No final live evaluation results file was found in evaluation/results/ "
+                    "-- check the checkpoint file (if any) uploaded as this run's artifact.")
+          else:
+              path = files[-1]
+              print(f"Results file: {path}")
+              data = json.load(open(path, encoding="utf-8"))
+              print(f"mode={data.get('mode')} provider={data.get('provider')} model={data.get('model')}")
+              metadata = data.get("metadata", {})
+              print(f"execution_mode={metadata.get('execution_mode')} base_url={metadata.get('base_url')} "
+                    f"delay_between_cases={metadata.get('delay_between_cases')} case_count={metadata.get('case_count')}")
+              print(json.dumps(data.get("aggregate", {}), indent=2))
+
+          checkpoints = sorted(glob.glob("evaluation/results/live_checkpoint_*.json"))
+          if checkpoints:
+              print(f"\nCheckpoint file present: {checkpoints[-1]}")
+          PY
+
+      # Uploaded whether the run step succeeded, partially completed, or
+      # failed -- a checkpoint file (if the run didn't finish all 25 cases)
+      # is exactly what a follow-up --resume run needs, and is only ever
+      # useful if it survives a failed step. Scoped to this run's own
+      # live_*/live_checkpoint_* files, not the whole evaluation/results/
+      # directory, so this artifact doesn't bundle in unrelated
+      # offline/ablation result files already committed to the repo.
+      - name: Upload evaluation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr-compass-live-evaluation
+          path: |
+            evaluation/results/live_*.json
+          if-no-files-found: warn
+          retention-days: 30
