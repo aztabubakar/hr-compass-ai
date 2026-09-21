@@ -229,7 +229,7 @@ pick one, no code changes needed.
 # 2. Copy .env.example to .env and set:
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=your-key-here
-# GEMINI_MODEL is optional; defaults to gemini-2.5-flash-lite if unset.
+# GEMINI_MODEL is optional; defaults to gemini-3.5-flash-lite if unset.
 ```
 
 **Groq (fully supported alternative):**
