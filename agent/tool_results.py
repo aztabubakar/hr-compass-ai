@@ -10,10 +10,36 @@ that's needed to render a readable trace line and to reliably extract
 citations without ever trusting the model's own prose), but contains no
 policy logic itself and never decides *which* tool to call — that
 decision is the LLM's alone, made in `agent/orchestrator.py`.
+
+`attribute_citations` (below) is a second, independent citation-precision
+step, distinct from `_filter_relevant_hits`: that filter narrows *one*
+`search_policy_documents` call's raw top-k hits down to genuinely relevant
+ones (still working from retrieval scores alone). `attribute_citations`
+runs once, after the whole turn's evidence has been gathered across
+*every* tool call and the model has produced its final answer, and narrows
+the accumulated candidate set down to whatever the final answer actually
+attributes a claim to. The two are complementary, not redundant: a model
+can legitimately retrieve several documents over several calls while
+researching a multi-part question (e.g. an interstate-work question that
+also checks the international-work allowance for comparison) without
+every one of them ending up relevant to what it actually tells the user.
 """
 from __future__ import annotations
 
+import re
+
 from agent.schemas import Citation
+
+# Matches this project's document-ID convention (see policies/content.py):
+# an all-caps, dash-separated PREFIX-CODE-NUMBER token, e.g. "POL-PTO-001".
+# Deliberately not hard-coded to "POL" or any specific category code, so a
+# future document-ID prefix still matches without a code change here.
+# Word-bounded on both ends and matched by exact set membership against
+# real candidate document_ids in `attribute_citations` below -- never by
+# substring containment -- so a similarly-named ID can never be confused
+# with another (e.g. a hypothetical "POL-LOC-0010" is never mistaken for
+# "POL-LOC-001").
+POLICY_ID_PATTERN = re.compile(r"\b[A-Z]{2,6}-[A-Z0-9]{2,6}-\d{2,4}\b")
 
 # How much lower than the single best-scoring hit in one search_policy_documents
 # call a hit's score may be and still count as genuinely relevant evidence,
@@ -184,3 +210,48 @@ def dedupe_citations(citations: list[Citation]) -> list[Citation]:
         seen.add(key)
         deduped.append(citation)
     return deduped
+
+
+def attribute_citations(answer: str, candidate_citations: list[Citation]) -> list[Citation]:
+    """Narrow `candidate_citations` -- every citation accumulated from tool
+    results over the whole turn (see `citations_from_tool_result`,
+    collected across calls in `agent/orchestrator.py`) -- down to the ones
+    the model's *final answer text* actually attributes a claim to, so
+    `AgentResponse.citations` reflects evidence actually used to ground the
+    answer, not merely evidence that was retrieved somewhere along the way
+    (e.g. a model researching a remote-work question may reasonably check
+    both the interstate and security-policy angles, one search at a time,
+    while its final answer only ends up resting on one of them).
+
+    This can only ever *remove* candidates, never add one: a policy ID the
+    model writes in its answer but that was never actually retrieved (a
+    fabricated citation) can never appear in the result, because this
+    function only selects *from* `candidate_citations` -- it never
+    constructs a new `Citation` from parsed answer text. Matching is exact
+    `document_id` set membership (see `POLICY_ID_PATTERN`), never substring
+    containment, so a document whose ID happens to prefix or resemble
+    another's can never be confused with it.
+
+    Deterministic: candidates are deduplicated first (`dedupe_citations`,
+    which preserves first-seen order) and the result preserves that same
+    relative order, filtered down -- never re-sorted or shuffled.
+
+    Conservative fallback: if the answer's set of mentioned document IDs
+    has no overlap at all with the candidates -- either because the model
+    didn't cite anything by ID (a real possibility: formatting variation,
+    or prose that paraphrases without repeating the exact ID), or, in the
+    rarer case, only mentioned an ID that matches no real candidate -- this
+    returns the full deduplicated candidate set unchanged, exactly this
+    project's pre-attribution behavior. Attribution is only ever allowed to
+    *sharpen* precision when it has positive evidence for which documents
+    were actually used; it must never silently drop every citation a case
+    otherwise had simply because the model's wording didn't happen to
+    repeat an ID verbatim.
+    """
+    deduped = dedupe_citations(candidate_citations)
+    if not deduped:
+        return deduped
+
+    mentioned_ids = set(POLICY_ID_PATTERN.findall(answer))
+    attributed = [c for c in deduped if c.document_id in mentioned_ids]
+    return attributed if attributed else deduped

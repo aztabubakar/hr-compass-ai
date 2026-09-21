@@ -17,8 +17,10 @@ backend trade-off (see design-and-evaluation.md).
 """
 from __future__ import annotations
 
+from agent.schemas import Citation
 from agent.tool_results import (
     CITATION_RELATIVE_SCORE_THRESHOLD,
+    attribute_citations,
     citations_from_tool_result,
     summarize_tool_result,
     trim_tool_result_for_llm,
@@ -30,6 +32,10 @@ def _hit(document_id: str, section: str, score: float, snippet: str = "some poli
         "document_id": document_id, "document_title": f"{document_id} title", "section": section,
         "source_path": f"/policies/{document_id.lower()}.md", "snippet": snippet, "score": score,
     }
+
+
+def _citation(document_id: str, section: str = "Some Section", snippet: str = "supporting text") -> Citation:
+    return Citation(document_id=document_id, document_title=f"{document_id} title", section=section, snippet=snippet)
 
 
 # ---------------------------------------------------------------------------
@@ -193,3 +199,122 @@ def test_trim_does_not_mutate_the_original_result() -> None:
     trim_tool_result_for_llm("search_policy_documents", result)
     assert len(result["results"]) == 2
     assert "source_path" in result["results"][0]
+
+
+# ---------------------------------------------------------------------------
+# attribute_citations: final-answer citation attribution (over-citation fix)
+#
+# candidate_citations here always models the whole turn's accumulated
+# evidence -- e.g. a remote-work question that retrieved location, remote-
+# work, and security-policy evidence over several tool calls -- and each
+# test checks what AgentResponse.citations should be once the model's
+# final answer text is known.
+# ---------------------------------------------------------------------------
+_LOC = _citation("POL-LOC-001")
+_RWK = _citation("POL-RWK-001")
+_SEC = _citation("POL-SEC-001")
+
+
+def test_attribution_narrows_to_the_single_document_the_answer_cites() -> None:
+    # A. Single-document attribution.
+    candidates = [_LOC, _RWK, _SEC]
+    answer = "You may work from that state without additional approval, per POL-LOC-001."
+
+    result = attribute_citations(answer, candidates)
+
+    assert [c.document_id for c in result] == ["POL-LOC-001"]
+
+
+def test_attribution_preserves_a_legitimate_multi_document_answer() -> None:
+    # B. Legitimate multi-document attribution: the answer genuinely rests
+    # on two of the three candidates -- both must survive, and the unrelated
+    # third (never mentioned) must not.
+    candidates = [_LOC, _RWK, _SEC]
+    answer = (
+        "This is within the interstate threshold under POL-LOC-001, but note it also "
+        "exceeds the Work From Anywhere allowance in POL-RWK-001, so it must be routed "
+        "as a location change request."
+    )
+
+    result = attribute_citations(answer, candidates)
+
+    assert {c.document_id for c in result} == {"POL-LOC-001", "POL-RWK-001"}
+    assert "POL-SEC-001" not in {c.document_id for c in result}
+
+
+def test_attribution_falls_back_to_all_candidates_when_answer_cites_nothing_by_id() -> None:
+    # C. Fallback behavior: the answer never repeats an exact policy ID
+    # (a real, expected case of model formatting variation) -- attribution
+    # must not interpret that as "nothing was used" and wipe out valid
+    # evidence; it must conservatively keep every candidate, exactly this
+    # project's pre-attribution behavior.
+    candidates = [_LOC, _RWK]
+    answer = "You may work from that state for up to six weeks without additional sign-off."
+
+    result = attribute_citations(answer, candidates)
+
+    assert {c.document_id for c in result} == {"POL-LOC-001", "POL-RWK-001"}
+
+
+def test_attribution_never_lets_a_fabricated_citation_through() -> None:
+    # D. Fabricated citation protection: the model's answer references a
+    # policy ID that was never actually retrieved. It must never appear in
+    # the result -- attribute_citations only ever selects *from*
+    # candidate_citations, so this holds structurally, not just by luck of
+    # this particular input. Since the only ID mentioned doesn't match any
+    # real candidate, this is also a fallback case (all real candidates are
+    # conservatively kept; the fake one can never be among them).
+    candidates = [_LOC, _RWK, _SEC]
+    answer = "This is approved per POL-FAKE-999."
+
+    result = attribute_citations(answer, candidates)
+
+    result_ids = {c.document_id for c in result}
+    assert "POL-FAKE-999" not in result_ids
+    assert result_ids == {"POL-LOC-001", "POL-RWK-001", "POL-SEC-001"}  # conservative fallback
+
+
+def test_attribution_drops_a_fabricated_id_but_keeps_the_genuine_one_when_mixed() -> None:
+    # A mixed case: one real, attributed citation plus one fabricated one in
+    # the same answer. The fabricated ID must never leak through, and the
+    # genuine one must not be swept into a fallback it doesn't need.
+    candidates = [_LOC, _RWK, _SEC]
+    answer = "This is approved per POL-LOC-001 and also somehow per POL-FAKE-999."
+
+    result = attribute_citations(answer, candidates)
+
+    assert [c.document_id for c in result] == ["POL-LOC-001"]
+
+
+def test_attribution_deduplicates_and_preserves_candidate_order() -> None:
+    # E. Deduplication / deterministic ordering: a duplicate candidate
+    # (e.g. the same section cited via two different tool calls) collapses
+    # to one, and survivors keep their original relative order rather than
+    # being re-sorted (here, RWK before LOC, matching the input order).
+    duplicate_rwk = _citation("POL-RWK-001")
+    candidates = [_RWK, duplicate_rwk, _LOC, _SEC]
+    answer = "Per POL-RWK-001 and POL-LOC-001, this is within the allowance."
+
+    result = attribute_citations(answer, candidates)
+
+    assert [c.document_id for c in result] == ["POL-RWK-001", "POL-LOC-001"]
+
+
+def test_attribution_never_matches_by_substring() -> None:
+    # Guard against confusing similarly-named IDs: a candidate whose ID is a
+    # prefix of another real-looking token in the answer must not be pulled
+    # in by a substring match -- POL-LOC-0011 is a different, unrelated
+    # document from POL-LOC-001 and is not even a real candidate here.
+    candidates = [_LOC]
+    answer = "This references POL-LOC-0011, an unrelated document."
+
+    result = attribute_citations(answer, candidates)
+
+    # POL-LOC-001 was never actually mentioned (only the longer, distinct
+    # POL-LOC-0011 token was) -- no overlap, so this is a fallback case, and
+    # the one real candidate is conservatively kept, not excluded.
+    assert [c.document_id for c in result] == ["POL-LOC-001"]
+
+
+def test_attribution_returns_empty_for_empty_candidates() -> None:
+    assert attribute_citations("Per POL-LOC-001.", []) == []

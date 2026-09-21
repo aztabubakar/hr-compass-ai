@@ -67,16 +67,60 @@ scoring deterministic and auditable, at the cost of being an approximate
 proxy rather than a semantic judge (see Limitations).
 
 **Answer quality**
-- **Groundedness** (`groundedness_avg`): fraction of a case's
-  `rubric_keywords` found (case-insensitive substring match) in the
-  agent's final answer text. A proxy for "did the answer actually say the
-  right thing," not a factuality checker.
+- **Groundedness** (`groundedness_avg`, also reported as
+  `rubric_keyword_coverage_avg` — same value, two names): fraction of a
+  case's `rubric_keywords` found (case-insensitive substring match) in the
+  agent's final answer text. **This is rubric-keyword coverage, not
+  factual groundedness** — the `rubric_keyword_coverage_avg` field name is
+  the honest one; `groundedness_avg` is kept alongside it only for
+  backward compatibility with existing readers of this report. An answer
+  can contain every rubric keyword and still misstate something, or give a
+  fully correct answer that doesn't happen to repeat the exact expected
+  wording. See "Limitations" below.
 - **Citation accuracy** (`citation_precision_avg`): of the documents the
   agent actually cited, what fraction were in `expected_policy_documents`.
+  What counts as "actually cited" is itself a deliberate design point —
+  see "Citation attribution" below.
 - **Citation completeness** (`citation_recall_avg`): of the documents a
   case expects, what fraction were actually cited. Only computed for
   cases that declare `expected_policy_documents` ("where practical," per
   the spec — several simple lookup cases have none).
+
+### Citation attribution: retrieved evidence vs. cited evidence
+
+`AgentResponse.citations` (what every citation metric above scores) is
+**not** simply everything the agent retrieved during a turn. A model can
+legitimately call `search_policy_documents`/`get_policy_section`/
+`check_policy_compliance` several times while researching a question —
+checking an adjacent or comparison policy is normal and even encouraged
+(`agent/prompts.py` rule 4c) — without every document it looked at ending
+up relevant to what it actually tells the user. Treating "retrieved" and
+"cited" as the same thing directly causes over-citation: e.g. a remote-work
+question that also touches a security-policy search along the way would
+otherwise carry that document into the final citations even if the answer
+never rests a claim on it, silently dragging citation precision down for
+reasons that have nothing to do with answer quality.
+
+`agent/orchestrator.py` keeps these as two distinct sets:
+- **Candidate/retrieved evidence**: every citation accumulated from tool
+  results over the whole turn (`agent/tool_results.py`'s
+  `citations_from_tool_result`, deduplicated as it accumulates). Retrieval
+  itself is deliberately left broad — this set is never narrowed for
+  precision's sake, so recall is never sacrificed at the retrieval stage.
+- **Final, attributed citations**: once the model's final answer text is
+  known, `agent/tool_results.py`'s `attribute_citations` narrows the
+  candidate set down to only the documents the answer actually references
+  by ID. This can only ever *remove* a candidate, never add one — a policy
+  ID the model writes but never actually retrieved (a fabricated citation)
+  can never appear in the result, since attribution only selects from
+  already-retrieved candidates. If the answer's text doesn't match any
+  candidate's ID at all (a real case: a model can phrase a fully correct
+  answer without repeating an exact ID), attribution conservatively falls
+  back to the full candidate set rather than risk wiping out valid
+  evidence — see `attribute_citations`'s docstring for the exact rule and
+  `tests/test_tool_results.py`'s `test_attribution_*` tests for its
+  behavior across single-document, multi-document, fallback, and
+  fabricated-citation cases.
 
 **Agent behavior**
 - **Tool selection accuracy** (`tool_selection_accuracy`): per case, all
@@ -147,12 +191,15 @@ proxy rather than a semantic judge (see Limitations).
   case its own way (e.g. checking PTO balance before or after looking up
   the employee profile) without being penalized for a difference that
   doesn't affect correctness.
-- **Citation precision penalizes broad-but-reasonable retrieval.** A
-  model that retrieves a superset of relevant documents (e.g. casting a
-  wider net on an ambiguous query) will show lower precision even if
-  every additional citation is still genuinely relevant policy evidence,
-  because "expected" is a fixed, small set chosen when the case was
-  written.
+- **Citation precision can still penalize broad-but-reasonable retrieval,
+  even after attribution.** "Citation attribution" above narrows final
+  citations to what the answer actually references by ID, which removes
+  the specific failure mode of a document retrieved-but-unused leaking
+  into `AgentResponse.citations` — but it cannot help a case where the
+  model's answer *genuinely and correctly* rests on more documents than a
+  case's fixed `expected_policy_documents` set anticipated. That remains a
+  limitation of a fixed expected-set comparison, not of attribution
+  itself.
 - **25 cases is a small sample.** Category-level metrics (especially ones
   with n=1 or n=2) swing heavily on a single case's outcome; read
   category breakdowns as illustrative, not statistically robust.

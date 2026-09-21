@@ -1084,6 +1084,70 @@ causes regardless of which one it actually was. This is stated plainly
 rather than implied otherwise, per this project's standing rule against
 claiming a verification that did not occur.
 
+### 7.11 Final-answer citation attribution (over-citation fix)
+
+Live evaluation (Section 10.2) showed a distinct citation-precision problem
+from the one Section 7.10 already fixed: even with `_filter_relevant_hits`
+in place, several remote-work cases (e.g. EVAL-008/9/10/11) returned an
+extra document -- typically `POL-SEC-001` -- alongside the two the case
+actually expected. The cause was not noisy top-k retrieval within one
+`search_policy_documents` call (7.10's fix); it was that `AgentResponse.citations`
+was simply every citation accumulated across the *whole turn's* several
+tool calls, with no step narrowing that down to what the final answer
+actually used. A model researching a remote-work question may reasonably
+check more than one angle (interstate, "Work From Anywhere," or an
+adjacent policy) across separate calls before realizing only one or two of
+them actually matter to its answer -- retrieving that extra evidence is
+normal and even encouraged (rule 4c), but carrying all of it into the
+final citations regardless of whether the answer used it is not.
+
+The fix keeps "what was retrieved" and "what was cited" as two explicitly
+separate sets:
+
+- **Candidate/retrieved evidence** (`collected_citations` in
+  `agent/orchestrator.py`): unchanged -- every citation accumulated from
+  tool results over the turn, deduplicated as it accumulates. Retrieval
+  itself is not narrowed for precision's sake, so recall is never
+  sacrificed here.
+- **Final, attributed citations** (`agent/tool_results.py`'s new
+  `attribute_citations`): computed once, right after the model's final
+  answer text is parsed, this narrows the candidate set down to only the
+  documents whose exact ID (matched by the project's `PREFIX-CODE-NUMBER`
+  convention, e.g. `POL-LOC-001`, via exact set membership -- never
+  substring containment) the answer text actually mentions. This can only
+  *remove* a candidate, never add one: a document ID the model writes but
+  never actually retrieved cannot appear in the result, since attribution
+  only selects from already-retrieved candidates, never constructs a new
+  `Citation` from parsed text. If the answer mentions none of the
+  candidates' IDs at all -- a real case, since a model can give a fully
+  correct answer without repeating an exact ID -- attribution
+  conservatively falls back to the full candidate set rather than risk
+  erasing valid evidence a case's citation recall depends on.
+
+`agent/prompts.py` rule 2a (`SYSTEM_PROMPT_VERSION` 1.3.0 -> 1.4.0)
+complements this at the prompting layer: cite only documents that support
+a claim actually being made, never a document merely because it was
+retrieved, and prefer the minimum sufficient citation set while still
+citing every document a genuinely multi-part answer needs. The code-level
+fix does not depend on the model following this guidance perfectly --
+attribution runs regardless of what the prompt says -- but the two are
+meant to point the same direction rather than working against each other.
+
+Proven in `tests/test_tool_results.py`'s `test_attribution_*` tests:
+single-document narrowing, a legitimate multi-document answer (both
+citations survive, an unrelated third does not), the no-ID-mentioned
+fallback, a fabricated-ID-only answer (fallback, and the fake ID never
+appears), a mixed real+fabricated answer (only the real one survives), and
+deduplication/ordering. `tests/test_agent_orchestrator.py`'s
+`test_remote_work_interstate_multi_document_evidence` was updated in the
+same change: it had asserted `len({c.document_id for c in result.citations}) >= 2`
+purely because the scripted scenario's tool calls touched two documents --
+exactly the pre-fix conflation of "retrieved" with "cited" this section
+fixes. Its assertion now checks multi-document *retrieval* via each tool
+call's own trace `sources` (unaffected by attribution) separately from
+final *citations*, which correctly narrow to the one document the scripted
+final answer actually names.
+
 ## 8. Testing
 
 `pytest` (131 tests total, all passing).

@@ -239,15 +239,30 @@ def test_remote_work_interstate_multi_document_evidence(mcp_server_env: dict[str
     ])
     result = _run(mcp_server_env, fake, "I'm EMP-1002. Can I work from Colorado for six weeks?")
 
-    tools_called = [step["tool"] for step in result.trace if step["type"] == "tool_call"]
+    tool_call_steps = [step for step in result.trace if step["type"] == "tool_call"]
+    tools_called = [step["tool"] for step in tool_call_steps]
     # Genuine multi-step orchestration: employee context, policy evidence
     # from more than one document, and the rule check -- not just a single
-    # check_policy_compliance call (agent/prompts.py rule 4c).
+    # check_policy_compliance call (agent/prompts.py rule 4c). Checked via
+    # each tool call's own trace `sources` (what that call actually
+    # retrieved), independent of what the final answer goes on to cite.
     assert tools_called.count("lookup_employee_profile") >= 1
     assert tools_called.count("search_policy_documents") >= 2
     assert "check_policy_compliance" in tools_called
+    retrieved_doc_ids = {source.split(" §")[0] for step in tool_call_steps for source in step["sources"]}
+    assert len(retrieved_doc_ids) >= 2, f"expected multi-document evidence gathered, got {retrieved_doc_ids}"
+
+    # But the scripted final answer only names POL-LOC-001 -- it never says
+    # anything grounded in the POL-RWK-001 evidence the model also looked at
+    # along the way (a realistic pattern: checking an adjacent policy while
+    # researching, then not actually needing it for the final answer). Final
+    # citations should reflect only what was actually used, per
+    # agent/tool_results.py's attribute_citations -- this is the citation
+    # over-citation fix's own regression test, not a relaxation of this
+    # test's original intent (which is still fully covered by the
+    # retrieved_doc_ids assertion above).
     doc_ids = {c.document_id for c in result.citations}
-    assert len(doc_ids) >= 2, f"expected multi-document evidence, got {doc_ids}"
+    assert doc_ids == {"POL-LOC-001"}, f"expected attribution to narrow to the cited document only, got {doc_ids}"
     assert result.escalated is True
 
 
