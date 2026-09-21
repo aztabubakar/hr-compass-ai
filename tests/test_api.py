@@ -111,7 +111,15 @@ def test_chat_happy_path_returns_answer_citations_and_trace(api_client: TestClie
     assert response.status_code == 200
     data = response.json()
     assert data["answer"] == "You have 48 hours of PTO available."
-    assert isinstance(data["trace"], list) and len(data["trace"]) == 2
+    assert isinstance(data["trace"], list)
+    # 2 tool_call steps (one per scripted tool call) plus one "decision"
+    # step per LLM turn (agent/orchestrator.py's per-call latency
+    # instrumentation) -- assert on the meaningful subset rather than the
+    # exact total step count, which is an implementation detail of how
+    # many LLM turns this specific script happens to take.
+    tool_call_steps = [s for s in data["trace"] if s["type"] == "tool_call"]
+    assert [s["tool"] for s in tool_call_steps] == ["lookup_employee_profile", "check_pto_balance"]
+    assert all(s["duration_ms"] is not None for s in data["trace"])
     assert data["conversation_id"]
     assert data["requires_clarification"] is False
     assert data["requires_confirmation"] is False

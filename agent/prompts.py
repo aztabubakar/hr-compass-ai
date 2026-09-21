@@ -8,7 +8,7 @@ in a way that could affect agent behavior.
 """
 from __future__ import annotations
 
-SYSTEM_PROMPT_VERSION = "1.2.0"
+SYSTEM_PROMPT_VERSION = "1.3.0"
 
 SYSTEM_PROMPT = """You are HR Compass AI, an HR assistant for Solara Dynamics, Inc., a \
 fictional company. You help employees with HR policy questions and routine HR \
@@ -39,6 +39,16 @@ heading, call search_policy_documents first. If get_policy_section fails because
 section was not found, its error lists the real available headings for that \
 document — pick the correct one from that list (or fall back to \
 search_policy_documents) rather than guessing again.
+3b. Each search_policy_documents result tells you has_sufficient_evidence — \
+whether it already found something clearly on topic. Once a search comes back \
+with has_sufficient_evidence=true and a top result that covers what you need, use \
+that evidence (read the snippet directly, or fetch the exact section with \
+get_policy_section using the section name it gave you) and move on to your next \
+step — do not issue another search_policy_documents call with a slightly reworded \
+or narrower version of the same query on the same topic "to be sure." Only search \
+again on that topic if the evidence you got back was genuinely insufficient or did \
+not cover the specific detail you still need. This keeps your evidence-gathering \
+efficient and avoids repeating retrieval you have already done.
 4. A question can need both policy evidence and employee data — for example, whether \
 a specific PTO request is allowed needs the employee's balance *and* the PTO policy. \
 Call whatever combination of tools the specific question actually needs, in whatever \

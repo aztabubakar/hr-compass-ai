@@ -43,6 +43,12 @@ class TraceStep:
     result_summary: str
     sources: list[str] = field(default_factory=list)
     escalation: str | None = None
+    duration_ms: float | None = None
+    """Wall-clock time the underlying call took, in milliseconds -- an LLM
+    round trip for a "decision" step, an MCP `tools/call` round trip for a
+    "tool_call" step. `None` for steps that don't wrap a timed call.
+    Optional/last so existing callers and serialized traces stay valid
+    without it."""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -62,6 +68,7 @@ class TraceRecorder:
         result_summary: str,
         sources: list[str] | None = None,
         escalation: str | None = None,
+        duration_ms: float | None = None,
     ) -> TraceStep:
         step = TraceStep(
             step=len(self._steps) + 1,
@@ -73,6 +80,7 @@ class TraceRecorder:
             result_summary=result_summary,
             sources=sources or [],
             escalation=escalation,
+            duration_ms=duration_ms,
         )
         self._steps.append(step)
         return step
@@ -82,6 +90,7 @@ class TraceRecorder:
         result_summary: str,
         escalation: str | None = None,
         sources: list[str] | None = None,
+        duration_ms: float | None = None,
     ) -> TraceStep:
         """Record a non-tool decision point (e.g. 'routing to remote-work workflow')."""
         step = TraceStep(
@@ -94,6 +103,7 @@ class TraceRecorder:
             result_summary=result_summary,
             sources=sources or [],
             escalation=escalation,
+            duration_ms=duration_ms,
         )
         self._steps.append(step)
         return step
