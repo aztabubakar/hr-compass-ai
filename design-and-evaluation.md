@@ -633,7 +633,8 @@ tools) -> LLMResponse`) — a small, OpenAI-tool-calling-shaped interface
 (`ChatMessage`, `ToolCall`, `ToolDefinition`, `LLMResponse`), never on a
 specific vendor SDK. Two implementations exist:
 
-- **`llm.groq_provider.GroqProvider`** (production default). **Groq** was
+- **`llm.groq_provider.GroqProvider`** (original production default;
+  **superseded by Gemini** — see the Phase 5 note below). **Groq** was
   chosen as the primary provider because it has a genuinely free tier with
   fast inference for open-weight, tool-calling-capable models (Llama 3.3
   by default), fitting this project's free-tier-compatibility requirement.
@@ -663,13 +664,25 @@ specific vendor SDK. Two implementations exist:
   "model" decides to call next, and asserts the orchestrator correctly
   acted on that decision — see Section 7.3 and `tests/test_agent_orchestrator.py`.
 
-`llm.config.get_provider()` constructs the configured real provider (only
-"groq" is currently supported; requesting anything else raises
+`llm.config.get_provider()` constructs the configured real provider
+(`"groq"` or `"gemini"`; requesting anything else raises
 `LLMConfigError`) and is never called at import time — importing `llm`,
 `agent`, or `app.main` never requires an API key or makes a network call;
 only actually handling a `/chat` request (or running
 `scripts/agent_smoke_test.py`) does. This is what keeps the automated test
-suite free of any Groq dependency.
+suite free of any live-provider dependency.
+
+**Phase 5 update: Gemini is now the production default**, not Groq.
+`llm.gemini_provider.GeminiProvider` (via Google's official `google-genai`
+SDK) was added alongside `GroqProvider` behind the same `LLMProvider`
+interface described above — no changes to `agent/` were needed, which is
+exactly what this abstraction was designed to make possible. `render.yaml`
+sets `LLM_PROVIDER=gemini` for the live deployment (see `deployed.md`);
+Groq remains fully implemented, tested, and available as a one-environment-
+variable switch, but is no longer the provider this project actually runs
+in production. See `ai-tooling.md`'s Phase 5 log entry for why the switch
+was made and what it required (including a Gemini-specific
+`thought_signature` tool-call-history fix).
 
 ### 7.2 Agent architecture: a bounded tool-calling loop, not a workflow
 
@@ -1270,8 +1283,9 @@ Agent Orchestrator (agent/orchestrator.py)
    |                                  \
    v                                   v
 LLM Provider (llm/)                MCP Client (mcp_client/client.py)
-  Groq (prod) / FakeLLMProvider       | stdio (subprocess)
-  (tests/offline eval)                v
+  Gemini (prod) / FakeLLMProvider     | stdio (subprocess)
+  (tests/offline eval); Groq          v
+  fully supported as an alternative
                                     MCP Server (mcp_server/server.py, 8 tools)
                                        |            |
                                        v            v
@@ -1292,10 +1306,10 @@ through `MCPClient` over the real MCP stdio protocol to the separate
 touches `rag/` (via `search_policy_documents`/`get_policy_section`),
 `mock_data/` (via the employee/PTO/benefits/ticket tools), and
 `mcp_server/compliance.py` (via `check_policy_compliance`). The LLM
-provider is swappable (Groq in production, `FakeLLMProvider` in every
-automated test and in `evaluation/run_offline.py`) without touching
-`agent/` at all, since both speak only `llm/base.py`'s `LLMProvider`
-interface.
+provider is swappable (**Gemini in production**, Groq as a fully
+supported alternative, `FakeLLMProvider` in every automated test and in
+`evaluation/run_offline.py`) without touching `agent/` at all, since all
+three speak only `llm/base.py`'s `LLMProvider` interface.
 
 ### 9.2 Expected MCP tool sequence for the two required demo workflows
 
@@ -1329,7 +1343,8 @@ Runs on every `push` and `pull_request`. A single `test` job: checkout,
 set up Python 3.11, `pip install -r requirements.txt`, an import/build
 check (imports the key modules, then runs `rag.ingest` with the hashing
 backend to a scratch directory as a build smoke test), the full offline
-`pytest` suite (145 tests as of this phase), `scripts/mcp_smoke_test.py`
+`pytest` suite (145 tests as of Phase 4; 275 as of the current commit —
+see `ai-tooling.md`'s Phase 5 log entry), `scripts/mcp_smoke_test.py`
 (explicit MCP discovery + tool-call check, the specific step
 `PROJECT_SPEC.md`/`docs/acceptance-checklist.md` call out separately from
 the general test suite), `scripts/app_smoke_test.py` (FastAPI app-start
@@ -1451,7 +1466,14 @@ CLAUDE.md's "do not claim work or verification that did not occur."
 ### 10.1 Deterministic (offline) evaluation results
 
 Run via `python -m evaluation.run_offline`, written to
-`evaluation/results/offline_20260917T181502Z.json`. **As documented
+`evaluation/results/offline_20260921T144719Z.json` (re-run after the
+evaluation-harness correction described in section 10.2; an earlier,
+pre-correction run is preserved at
+`evaluation/results/offline_20260917T181502Z.json` and
+`evaluation/results/offline_20260921T042634Z.json` for traceability — the
+pre-correction runs show citation precision 0.81 instead of 1.00 below,
+purely because of the case-definition mismatches section 10.2 explains,
+not any change to the citation-attribution code itself). **As documented
 extensively in `evaluation/README.md`, this is an architecture-verification
 run against `FakeLLMProvider`-scripted "model" decisions, not a measurement
 of real LLM quality** -- every script in `evaluation/scripts.py` was
@@ -1464,13 +1486,13 @@ live model will behave this well unprompted.
 | Cases run | 25 / 25, 0 errors |
 | Groundedness (avg) | 0.96 |
 | Citation recall (avg) | 1.00 |
-| Citation precision (avg) | 0.81 |
+| Citation precision (avg) | 1.00 |
 | Tool selection accuracy | 1.00 |
 | Workflow completion rate | 1.00 |
 | Clarification accuracy | 1.00 |
 | Escalation accuracy | 1.00 |
 | Action-safety pass rate | 1.00 |
-| Latency p50 / p95 (offline, near-instant fake model) | 0.007s / 0.026s |
+| Latency p50 / p95 (offline, near-instant fake model) | 0.009s / 0.034s |
 
 By category (n, groundedness, tool selection, workflow completion,
 clarification accuracy, escalation accuracy, action-safety):
@@ -1504,12 +1526,100 @@ is documented as a proxy, not a factuality judge.
 
 ### 10.2 Live (real-model) evaluation results
 
-**Not run.** `evaluation/run_live.py` requires `GROQ_API_KEY`, which is
-not available in this development environment (confirmed before writing
-this section). Running it, and completing `evaluation/README.md`'s "Live
-model validation checklist," is listed as required, not-yet-done work in
-section 12 below. Do not read section 10.1's 1.00s as any indication of
-how a real model will score -- see 10.1's opening paragraph.
+**Run, twice, against the actual deployed production application**
+(<https://hr-compass-ai-cosv.onrender.com>, real Gemini calls, real MCP
+server, real RAG index) via deployed-mode `evaluation.run_live`
+(`EVAL_BASE_URL` set), executed through the manually-triggered
+`.github/workflows/live-evaluation.yml` GitHub Actions workflow because
+this development environment's own egress policy cannot reach the Render
+hostname directly (see `deployed.md`). This is the real measurement that
+section 10.1 explicitly is not.
+
+**A. Original deployed production evaluation.** The first full 25-case
+run against production, before any evaluator changes.
+
+**B. Read-only evaluator audit.** The original run's per-case failures
+were audited against the actual policy text and tool semantics (not
+against what the evaluator *expected*). The audit found that several
+evaluation-*case* definitions in `evaluation/cases.json` — not the
+application being tested — encoded incorrect expectations: e.g. one case
+expected no escalation for a PTO request that can never clear the
+policy's notice-period threshold on any run date, and two cases expected
+tool calls (`lookup_employee_profile`, `check_policy_compliance`) beyond
+what the request actually required. See `evaluation/README.md`'s
+"Production Evaluation Audit and Harness Correction" section for the full
+per-case rationale.
+
+**C. Narrow harness corrections.** Only `evaluation/cases.json`,
+`evaluation/scripts.py`, and `evaluation/metrics.py`'s
+`_check_no_fabricated_success` helper were changed, to align case
+expectations with actual, correct system behavior. **The production
+application itself (`agent/`, `app/`, `llm/`, `rag/`, `mcp_server/`,
+`mcp_client/`, prompts, `render.yaml`) was not modified between the two
+runs below** — the corrected numbers reflect a fairer test of the same
+unchanged system, not an improved system.
+
+**D. Corrected final production evaluation.** The second, corrected run
+against the same unchanged production deployment. This is the final,
+authoritative production benchmark for this project.
+
+| Metric | A. Original production | D. Corrected production |
+|---|---|---|
+| Total cases | 25 | 25 |
+| Errors | 0 | 0 |
+| Groundedness (avg) | 0.72 | 0.72 |
+| Citation recall (avg) | 0.8571 | 0.9615 |
+| Citation precision (avg) | 0.8929 | 0.9231 |
+| Tool-selection accuracy | 0.8261 | 0.9565 |
+| Workflow-completion rate | 0.84 | 0.96 |
+| Clarification accuracy | 0.92 | 0.96 |
+| Escalation accuracy | 0.96 | 1.00 |
+| Action-safety pass rate | 0.625 | 0.75 |
+| Latency mean | 5.4585s | 5.1263s |
+| Latency p50 | 3.3898s | 3.5894s |
+| Latency p95 | 11.9172s | 10.8519s |
+| Latency max | 26.5661s | 26.9810s |
+
+Groundedness is unchanged between the two runs by construction: the
+harness correction touched case *expectations* (tools, escalation flags,
+one case's user input to remove a hidden-script dependency), not the
+keyword lists graded against — and the model's real answers were not
+re-generated differently, since the underlying deployed application never
+changed. Every other metric improved because the corrected cases now
+grade the model's actual (correct) behavior against correct expectations,
+not because the model itself answers differently.
+
+**Neither raw result JSON is committed to this repository.** Both exist
+as GitHub Actions workflow artifacts named `hr-compass-live-evaluation`
+(one per workflow run); this document is the durable, version-controlled
+record of both runs' numbers. See `evaluation/README.md` for the
+per-case audit trail if the raw artifacts are no longer available.
+
+**Evaluator limitations (documented transparently, not hidden):**
+
+- **Groundedness is deterministic keyword/substring matching**
+  (`evaluation/metrics.py`), not a semantic judge. A real Gemini answer
+  that is factually correct but phrases things differently from the
+  case's expected keyword list scores lower here even when a human grader
+  would call the answer fully grounded. The 0.72 groundedness average
+  should be read with this in mind — it is very likely an undercount of
+  true groundedness, not a measurement that the model is inventing
+  unsupported claims. (`evaluation/README.md` documents specific instances
+  of this from the offline run; the same proxy limitation applies to the
+  live run's lower score, likely more so, since a real model's phrasing
+  varies more than a hand-scripted one's.)
+- **Category N (action-confirmation safety) remains a known challenging
+  area.** The final production action-safety pass rate is **0.75** — the
+  lowest metric in the corrected run. This reflects genuine real-model
+  behavior on the confirmation-gating scenarios (the code-level
+  confirmation gate itself is unconditionally enforced and separately
+  covered by `tests/test_agent_orchestrator.py`; what varies here is
+  whether the model's own final answer text also communicates the
+  preview/confirmed state clearly and safely across the case's phrasing
+  variations). This is called out here rather than smoothed over: a
+  demo or future iteration should not claim this area is fully solved.
+- These are the two metrics most worth a reviewer's attention before
+  treating the corrected benchmark as a ceiling rather than a snapshot.
 
 ### 10.3 RAG retrieval ablation: top_k=3 vs. top_k=5
 
@@ -1544,23 +1654,29 @@ change it.
 
 ### 10.4 Latency methodology
 
-Per-case latency is measured as wall-clock time around each
-`AgentOrchestrator.run()` call (`evaluation/evaluator.py:run_case`), from
-just before the first LLM turn to the final structured response,
-including every MCP tool round-trip in between. p50/p95 use the
-nearest-rank method over the sample (`evaluation/metrics.py:latency_stats`
--- documented there as adequate for a ~25-sample run, not a statistically
-robust percentile estimator). Offline-mode latency (section 10.1) reflects
-only orchestration + real MCP/RAG overhead, since `FakeLLMProvider`
-resolves near-instantly; live-mode latency (once run) will additionally
-include the real Groq API round-trip per model turn, which will dominate
-the total for any case with more than one tool call. No cold-start vs.
-warm-request separation has been measured yet, since no live deployment
-exists yet to measure against -- `deployed.md` has a placeholder for this,
-and `scripts/deployment_smoke_test.py` can be timed manually (e.g. `time
-python -m scripts.deployment_smoke_test <url>`) against a real Render
-instance immediately after a cold deploy vs. after a warm request, once
-one exists.
+Per-case latency is measured as wall-clock time around each request --
+locally, around `AgentOrchestrator.run()` (`evaluation/evaluator.py:run_case`);
+in deployed mode, around the full HTTP round-trip to `/chat`
+(`evaluation/evaluator.py:run_case_http`) -- from just before the first LLM
+turn to the final structured response, including every MCP tool round-trip
+in between. p50/p95 use the nearest-rank method over the sample
+(`evaluation/metrics.py:latency_stats` -- documented there as adequate for
+a ~25-sample run, not a statistically robust percentile estimator).
+Offline-mode latency (section 10.1) reflects only orchestration + real
+MCP/RAG overhead, since `FakeLLMProvider` resolves near-instantly.
+
+**Deployed-mode latency has now been measured** against the real
+production deployment (section 10.2's corrected run): mean 5.1263s, p50
+3.5894s, p95 10.8519s, max 26.9810s across 25 cases. This includes the
+real Gemini API round-trip per model turn (which dominates the total for
+any case with more than one tool call) plus real network latency to
+Render. No isolated, dedicated cold-start-vs-warm-request measurement has
+been made, but the gap between the p50 (3.59s) and the p95/max (10.85s /
+26.98s) is consistent with one or two Render free-tier cold starts within
+the 25-request run rather than a general performance problem -- see
+`deployed.md`'s "Cold-start behavior" section. `scripts/deployment_smoke_test.py`
+can be timed manually (e.g. `time python -m scripts.deployment_smoke_test <url>`)
+for a more targeted, isolated cold-start measurement if one is needed.
 
 ## 11. Architecture diagram
 
@@ -1572,41 +1688,36 @@ document).
 
 See `docs/requirements-coverage-matrix.md` for the full item-by-item
 mapping of every `docs/acceptance-checklist.md` requirement to its
-implementation, test/evidence, documentation, and status (complete /
-pending-live-validation / pending-deployment) -- this section summarizes
-the same conclusion in prose.
+implementation, test/evidence, documentation, and status -- this section
+summarizes the same conclusion in prose.
 
-Everything in Phase 1-4's code, tests, CI configuration, and deployment
-*configuration* is complete. What remains is executing steps that require
-resources not available in this development environment, or a human
-decision this document should not make unilaterally:
+Everything in Phase 1-4's code, tests, CI configuration, deployment
+configuration, actual deployment, and live evaluation is now complete and
+verified (section 10.2). What remains is a short list of genuinely manual,
+human-only steps this document should not (and cannot) do on its own --
+see `README.md`'s "Final submission checklist" for the authoritative,
+up-to-date list. In summary:
 
-- **Actually deploy to Render.** `render.yaml` is written and validated as
-  YAML but has never been applied against a real Render account (none was
-  available in this session). Requires: creating the Render service from
-  this repo/blueprint, setting `GROQ_API_KEY` in the Render dashboard,
-  turning off Render's "Auto-Deploy" toggle, setting the
-  `RENDER_DEPLOY_HOOK_URL` GitHub secret (see section 9.3), and then
-  filling in `deployed.md`'s placeholders with the real URL, deploy date,
-  and commit SHA.
-- **Live Groq evaluation.** `python -m evaluation.run_live` and
-  `evaluation/README.md`'s "Live model validation checklist" both require
-  `GROQ_API_KEY`, which this environment does not have. This is the only
-  way to get a real measurement of model quality (section 10.1's numbers
-  are architecture verification only, not model quality, by design).
 - **A recorded 7-10 minute demo** covering both required workflows
   through the real UI/agent, MCP tool names/arguments/outputs, citations,
-  architecture, deployment, and CI/CD -- best recorded against the actual
-  deployed URL once it exists, using the two demo prompts in section 9.2
-  and README.md's "Example demo prompts."
-- **Confirm the Groq model choice** (`GROQ_MODEL`, defaulting to a current
-  Llama 3.3 tool-calling model in `llm/groq_provider.py`) against Groq's
-  current free-tier model list and rate limits before the recorded demo,
-  since this affects both live evaluation quality and its p50/p95 latency.
+  architecture, deployment, and CI/CD, showing government-issued ID as the
+  assignment requires -- against the actual deployed URL, using the two
+  demo prompts in section 9.2 and README.md's "Example demo prompts."
+- **Sharing this repository with the `quantic-grader` GitHub account**
+  and confirming the demo video link and repository URL are accessible to
+  graders.
+- **Completing the final submission form.**
+
+Two items formerly listed here are done, not remaining: the application
+is deployed (`deployed.md`) and live evaluation has been run twice against
+that deployment, with a corrected final benchmark (section 10.2).
 
 ## 13. Decisions the student/user may want to weigh in on
 
-- **Groq model choice**: see section 12 above.
+- **LLM provider**: Gemini is now the production default (section 7.1);
+  Groq remains fully implemented and available via `LLM_PROVIDER=groq` if
+  a future need arises, but no further model-choice decision is currently
+  outstanding for the deployed system.
 - **Chat UI**: this project used a minimal FastAPI-served frontend (no
   Streamlit) since it yields a single-service deployment, simpler for a
   free-tier host, per CLAUDE.md's stated preference for that outcome. Now

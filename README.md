@@ -6,23 +6,32 @@ project. See `PROJECT_SPEC.md` for the authoritative assignment
 requirements and `docs/architecture.md` for the system architecture
 diagram (Mermaid + text) and component overview.
 
-**Project status: Phase 4 — evaluation, CI/CD, deployment configuration.**
-Phase 1 delivered the policy corpus, synthetic HR datasets, and RAG
-pipeline. Phase 2 added a real MCP server (8 tools) and MCP client. Phase 3
-added a real LLM-driven agent (**Google Gemini** by default, Groq fully
-supported as an alternative — see "Configuring the LLM" below) that
-dynamically discovers and calls those MCP tools — choosing which ones and
-in what order itself, not from a hard-coded sequence — plus a FastAPI web
-app (`/health`, `/chat`, `/api/tools`) and a browser chat UI. Phase 4 added
-a 25-case evaluation harness (deterministic + live modes, a RAG top-k
-ablation), GitHub Actions CI (tests, MCP/app smoke tests, deterministic
-evaluation, test-gated deployment trigger), and Render deployment
-configuration. **All of that is complete in code and tests; actually
-deploying to Render and running the live-model evaluation both require
-resources (a Render account, a `GEMINI_API_KEY`) not available in this
-development environment** — see `deployed.md` and
-`design-and-evaluation.md` section 12 ("Remaining Work") for the precise,
-honest list of what's left.
+**Live application: <https://hr-compass-ai-cosv.onrender.com>**
+
+**Project status: deployed and live-evaluated.** Phase 1 delivered the
+policy corpus, synthetic HR datasets, and RAG pipeline. Phase 2 added a
+real MCP server (8 tools) and MCP client. Phase 3 added a real LLM-driven
+agent (**Google Gemini** in production, Groq fully supported as an
+alternative — see "Configuring the LLM" below) that dynamically discovers
+and calls those MCP tools — choosing which ones and in what order itself,
+not from a hard-coded sequence — plus a FastAPI web app (`/health`,
+`/chat`, `/api/tools`) and a browser chat UI. Phase 4 added a 25-case
+evaluation harness (deterministic + live modes, a RAG top-k ablation),
+GitHub Actions CI (tests, MCP/app smoke tests, deterministic evaluation,
+test-gated deployment trigger), and Render deployment configuration.
+
+**All of the above is now actually deployed, not just configured**: the
+app is live at the URL above, running against real Gemini calls in
+production; RAG retrieval, all 8 MCP tools, and the compliance engine are
+serving real requests; and the full 25-case evaluation has been run
+against that live deployment (not just offline against a scripted fake
+model) via the manually-triggered `.github/workflows/live-evaluation.yml`
+GitHub Actions workflow — see "Evaluation" below and
+`design-and-evaluation.md` section 10.2 for the results. The automated
+test suite currently stands at **275 passed**. See `deployed.md` for the
+full deployment record and `design-and-evaluation.md` section 12 for the
+remaining, genuinely-manual submission steps (demo recording, grader
+repository access, the submission form).
 
 ## The company
 
@@ -333,21 +342,17 @@ takes a base URL (see "Deploying to Render" below) and checks `/`,
 pytest
 ```
 
-145 tests: 38 from Phase 1 (policy parsing, chunking, vector store,
-retrieval, HR data integrity), 65 from Phase 2 (44 covering the MCP server/
-client/all 8 tools/both demo workflows through the real protocol, plus 21
-new compliance-engine boundary regression tests — see "Exact calendar-day
-compliance fix" in `design-and-evaluation.md`), 28 from Phase 3 (17
-agent-orchestration tests proving genuine model-driven tool selection for
-every required behavior, plus 11 FastAPI endpoint tests), and 14 from
-Phase 4 (13 covering the evaluation harness itself — case loading, scoring
-rules, and a handful of cases run through the real orchestrator/MCP layer
-— plus 1 new `/health` degraded-status test). 219 tests pass as of the
-Gemini migration, the difference made up of `tests/test_gemini_provider.py`
-(29 tests covering `GeminiProvider` end to end against mocked
-`google-genai` objects — see its module docstring for the full scenario
-list) plus a handful of smaller additions elsewhere (e.g. the `/chat`
-end-to-end timeout test in `tests/test_api.py`).
+**275 tests pass** as of the current commit. This grew from an original
+145 (38 from Phase 1's RAG/data-integrity tests, 65 from Phase 2's MCP
+server/client/compliance-engine tests, 28 from Phase 3's agent/API tests,
+14 from Phase 4's evaluation-harness tests) through the Gemini migration
+(`tests/test_gemini_provider.py` and `tests/test_llm_provider_logging.py`
+covering `GeminiProvider` end to end against mocked `google-genai`
+objects, never a live call) and the subsequent citation-attribution and
+evaluation-harness-correction work (`tests/test_tool_results.py`,
+additions to `tests/test_evaluation.py` and `tests/test_evaluation_http.py`
+— see `ai-tooling.md`'s Phase 5 log entry for the full list of what each
+round of tests added).
 
 The suite is fully offline and deterministic: it builds a real index over
 the actual Solara Dynamics corpus once per session using the hashing
@@ -388,28 +393,60 @@ thresholds these scenarios are designed to exercise.
 
 ## Evaluation
 
+The same 25-case set (`evaluation/cases.json`) is run in two distinct
+modes:
+
 ```bash
-python -m evaluation.run_offline          # deterministic, offline, CI-safe (25 cases)
-python -m evaluation.run_offline --max-cases 5   # fast subset
-python -m evaluation.run_live             # real LLM model (Gemini/Groq per LLM_PROVIDER), never run in CI
-python -m evaluation.ablation             # RAG retrieval ablation: top_k=3 vs top_k=5
+python -m evaluation.run_offline                  # deterministic, offline, CI-safe (FakeLLMProvider)
+python -m evaluation.run_offline --max-cases 5     # fast subset
+python -m evaluation.run_live                      # real LLM against a *local* RAG index/MCP server (Gemini/Groq per LLM_PROVIDER)
+python -m evaluation.ablation                      # RAG retrieval ablation: top_k=3 vs top_k=5
+
+# Deployed mode: replay the same 25 cases as real HTTP requests against a
+# live Render deployment instead of a local process (no local RAG index or
+# MCP subprocess needed) -- see evaluation/README.md for the full design.
+EVAL_BASE_URL=https://hr-compass-ai-cosv.onrender.com \
+  python -m evaluation.run_live --delay-between-cases 20
 ```
 
-25 structured cases (`evaluation/cases.json`) across 15 categories
-(straightforward/multi-document/employee-data policy questions, PTO and
-remote-work workflows, benefits, expense compliance, ambiguous requests,
-missing/invalid employee IDs, out-of-scope questions, sensitive
-escalation, action-confirmation safety, and tool-failure/incomplete-
-evidence cases), scored for groundedness, citation accuracy/completeness,
-tool-selection accuracy, workflow completion, clarification/escalation
-accuracy, action-safety pass rate, and p50/p95 latency. **`run_offline`
-proves the agent/MCP/safety architecture works — it does not measure real
-LLM quality, since its "model" is a scripted `FakeLLMProvider`; only
-`run_live` (not run in this development environment — no `GEMINI_API_KEY`
-was available) measures that.** Full methodology, metrics definitions,
-documented limitations, and a manual live-model validation checklist are
-in `evaluation/README.md`; results and analysis are in
-`design-and-evaluation.md` section 10.
+25 structured cases across 15 categories (straightforward/multi-document/
+employee-data policy questions, PTO and remote-work workflows, benefits,
+expense compliance, ambiguous requests, missing/invalid employee IDs,
+out-of-scope questions, sensitive escalation, action-confirmation safety,
+and tool-failure/incomplete-evidence cases), scored for groundedness,
+citation accuracy/completeness, tool-selection accuracy, workflow
+completion, clarification/escalation accuracy, action-safety pass rate,
+and p50/p95 latency.
+
+**`run_offline` proves the agent/MCP/safety architecture works — it does
+not measure real LLM quality**, since its "model" is a scripted
+`FakeLLMProvider`. **Deployed-mode `run_live` (`EVAL_BASE_URL` set)
+measures real quality**, against the actual production deployment: this
+has now been run twice — an original baseline and, after a read-only
+audit of the evaluator itself found a handful of evaluation-*case*
+definitions that conflicted with actual policy/tool semantics (not
+application bugs), a corrected run with those case definitions fixed. Both
+baselines, and the harness-correction rationale, are documented in
+`design-and-evaluation.md` section 10.2.
+
+Because this Claude Code Cloud environment's organization-level egress
+policy blocks the Render hostname, deployed-mode evaluation here is run
+through a manually-triggered GitHub Actions workflow instead of directly
+from a dev session:
+
+```
+GitHub -> Actions -> "Live Production Evaluation" -> Run workflow
+```
+
+(`.github/workflows/live-evaluation.yml`, `workflow_dispatch`-only, needs
+no secrets). It health-checks the deployment, runs the deployed-mode
+evaluation, and uploads the full results as a workflow artifact named
+**`hr-compass-live-evaluation`**.
+
+Full methodology, metrics definitions, documented limitations, and the
+live-model validation checklist are in `evaluation/README.md`; results and
+analysis (both production baselines, the offline architecture-verification
+run, and the ablation) are in `design-and-evaluation.md` section 10.
 
 ## Continuous integration
 
@@ -443,14 +480,39 @@ redeploy/restart for the new value to take effect), and once live,
 smoke-test it:
 
 ```bash
-python -m scripts.deployment_smoke_test https://your-app.onrender.com
+python -m scripts.deployment_smoke_test https://hr-compass-ai-cosv.onrender.com
 ```
 
-`deployed.md` has the (currently placeholder) record of the actual
-deployed URL, date, and commit once this has been done — see
-`design-and-evaluation.md` section 12 for exactly what deployment steps
-remain (none of them can be completed from this development environment,
-which has no Render account or `GEMINI_API_KEY`).
+**This project is already deployed** at
+<https://hr-compass-ai-cosv.onrender.com> — see `deployed.md` for the full
+deployment record (URL, health endpoint, production provider/model,
+environment variables, known free-tier cold-start behavior).
+
+## Final submission checklist
+
+Everything above this line reflects the current, verified repository
+state. The items below are genuinely manual — they cannot be verified by
+inspecting this repository and must be confirmed by a human before
+submission:
+
+- [ ] Live production URL opens: <https://hr-compass-ai-cosv.onrender.com>
+- [ ] `/health` reports a healthy status on the live deployment
+- [ ] CI (`.github/workflows/ci.yml`) is green on the current `main` branch
+- [ ] The `live-evaluation.yml` workflow's `hr-compass-live-evaluation`
+      artifact is downloadable from the latest run
+- [ ] `GEMINI_API_KEY` is configured in the Render dashboard's environment
+      variables
+- [ ] `RENDER_DEPLOY_HOOK_URL` GitHub secret is set, *only if* automatic
+      test-gated redeploy-on-push is desired (optional; the app already
+      runs without it)
+- [ ] Repository is shared with the GitHub account `quantic-grader`
+- [ ] A 7-10 minute demo has been recorded covering both required agentic
+      workflows (MCP tool names/arguments/outputs, citations)
+- [ ] Government-issued ID shown on camera at the start of the demo, per
+      the assignment's requirement
+- [ ] Demo video link is accessible to graders
+- [ ] Repository URL is accessible to graders
+- [ ] Final submission form has been completed
 
 ## Requirements coverage
 

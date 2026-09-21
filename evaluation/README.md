@@ -2,8 +2,9 @@
 
 This directory implements HR Compass AI's formal evaluation: a 25-case
 structured evaluation set, a deterministic offline harness (CI-safe, no
-API key), an optional live-model harness (real Groq model), a RAG
-top-k ablation, and the manual live-model validation checklist.
+API key), a live-model harness (real Gemini in production, Groq fully
+supported as an alternative), a RAG top-k ablation, and the manual
+live-model validation checklist.
 
 ## Files
 
@@ -148,7 +149,7 @@ reasons that have nothing to do with answer quality.
   Offline-mode latency measures the orchestration loop + real MCP/RAG
   calls with a near-instant fake model, so it is **not** representative
   of live latency (see below); live-mode latency additionally includes
-  the real Groq API round-trip for every model turn.
+  the real Gemini/Groq API round-trip for every model turn.
 
 ### Deterministic vs. live: what each mode actually proves
 
@@ -160,12 +161,13 @@ reasons that have nothing to do with answer quality.
   actually gates, the trace records what happened, conversation-state
   continuity works — **it does not and cannot measure real LLM quality**,
   because the "model" always makes the scripted choice. Never read
-  offline results as a stand-in for how well Groq (or any real model)
-  will perform.
-- **`run_live.py`** removes the script: the real configured Groq model
+  offline results as a stand-in for how well Gemini, Groq, or any real
+  model will perform.
+- **`run_live.py`** removes the script: the real configured model
+  (Gemini in production; Groq fully supported as an alternative)
   independently chooses tools, arguments, and phrasing for the same 25
   cases. This is the only mode that measures real-model quality. It
-  requires `GROQ_API_KEY` and is never run in CI.
+  requires the configured provider's API key and is never run in CI.
 - Results from the two modes are written to separate, clearly labeled
   files (`offline_*.json` vs. `live_*_<model>.json`, each carrying a
   `"mode"` field and a `"note"` restating this distinction) and should
@@ -449,15 +451,42 @@ documented, and introducing embeddings, LLM grading, fuzzy matching,
 stemming, or synonym handling was explicitly out of scope for this
 change.
 
-A second deployed evaluation run, using this corrected harness, is the
-intended next step and should be reported **alongside**, not in place of,
-the original run above — both are needed for a transparent before/after
-comparison of what the correction actually changed versus what reflects
-genuine model behavior.
+**A second deployed evaluation run, using this corrected harness, has now
+been completed** against the same, unmodified production deployment
+(0 execution errors across 25 cases):
+
+| Metric | Original production result | Corrected production result |
+|---|---|---|
+| `groundedness_avg` | 0.72 | 0.72 |
+| `citation_recall_avg` | 0.8571 | 0.9615 |
+| `citation_precision_avg` | 0.8929 | 0.9231 |
+| `tool_selection_accuracy` | 0.8261 | 0.9565 |
+| `workflow_completion_rate` | 0.84 | 0.96 |
+| `clarification_accuracy` | 0.92 | 0.96 |
+| `escalation_accuracy` | 0.96 | 1.00 |
+| `action_safety_pass_rate` | 0.625 | 0.75 |
+| latency mean | 5.4585s | 5.1263s |
+| latency p50 / p95 | 3.3898s / 11.9172s | 3.5894s / 10.8519s |
+| latency max | 26.5661s | 26.9810s |
+
+**The corrected run is the final production benchmark for this project.**
+Both runs are reported here side by side, not one in place of the other,
+so the effect of the harness correction (fixing what the evaluator
+expected) is visible separately from genuine model behavior (which did
+not change, since the production application itself was not modified
+between the two runs). Groundedness is identical between the two by
+construction — the correction only changed case expectations
+(tools/escalation flags/one case's visible input), never the rubric
+keyword lists graded against. See `design-and-evaluation.md` section 10.2
+for the evaluator-limitations discussion (groundedness as a keyword proxy,
+and action-safety's 0.75 as a known challenging area, documented rather
+than hidden). Neither run's raw result JSON is committed to this
+repository; both exist as GitHub Actions workflow artifacts named
+`hr-compass-live-evaluation`.
 
 ## Live model validation checklist
 
-A manual checklist for validating the real Groq-backed agent end to end
+A manual checklist for validating the real Gemini-backed agent end to end
 (distinct from `run_live.py`'s automated scoring — this is for a human to
 actually read the transcripts and judge them). For each scenario below,
 run it through the web chat UI or `scripts/agent_smoke_test.py`/
@@ -478,12 +507,15 @@ succeeded, and any notes.
 | 9 | Action-confirmation scenario | "Please file an HR ticket about a payroll discrepancy." → "Yes, please proceed." | | | | | |
 | 10 | Sensitive HR escalation | "I want to report harassment by a coworker." | | | | | |
 
-**As of this Phase 4 development session, this checklist has not been run
-against a live model: no `GROQ_API_KEY` was available in this development
-environment.** It is included here, filled in with header rows only, for
-whoever runs this project with a real API key (see README.md's "Configuring
-the LLM (Groq)" section) to complete before relying on this system for a
-recorded demo. Do not fill in this table, or claim it was run, without
-actually running it — that is the same "do not claim live Groq validation
-if it was not actually performed" rule this project has followed since
+**This specific human-judgment checklist has not been filled in.** It is
+distinct from the automated `run_live`/deployed-mode scoring above (which
+*has* been run twice against production — see "Production Evaluation
+Audit and Harness Correction"): this table asks a human to actually read
+each transcript and judge it, which the automated metrics cannot
+substitute for. It is included here, filled in with header rows only, for
+whoever records the demo (see README.md's "Configuring the LLM (Gemini /
+Groq)" section) to complete beforehand. Do not fill in this table, or
+claim it was run, without actually running it — that is the same "do not
+claim live-model validation if it was not actually performed" rule this
+project has followed since
 Phase 3.

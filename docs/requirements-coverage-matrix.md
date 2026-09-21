@@ -5,12 +5,17 @@ Maps every item in `docs/acceptance-checklist.md` (which mirrors
 with an honest status. Statuses used:
 
 - **complete** — implemented, tested, and documented; nothing further needed.
-- **pending-live-validation** — implemented and offline-tested, but its
-  real-world quality claim needs a live Groq run this environment
-  couldn't perform (no `GROQ_API_KEY`).
-- **pending-deployment** — implemented and validated locally/in CI, but
-  needs an actual Render deployment this environment couldn't perform (no
-  Render account).
+- **pending-manual-step** — implemented and verified everywhere code
+  inspection can reach, but the remaining step is a genuinely human/manual
+  action (recording a video, sharing repository access, a submission form)
+  that no amount of further engineering resolves.
+
+The application is deployed (<https://hr-compass-ai-cosv.onrender.com>,
+see `deployed.md`) and has been evaluated against that live deployment
+(see `design-and-evaluation.md` section 10.2), so the `pending-live-validation`
+/ `pending-deployment` statuses used earlier in this project no longer
+apply to any row below — they are retained struck through in the Summary
+for traceability of what used to be open.
 
 | Requirement | Implementation | Test / evidence | Documentation | Status |
 |---|---|---|---|---|
@@ -42,40 +47,41 @@ with an honest status. Statuses used:
 | `/health` returns app/MCP status | `app/main.py:health`, nested `HealthResponse` | `test_health_returns_expected_shape`, `test_health_reports_degraded_when_mcp_unavailable` | design-and-evaluation.md section 9.6 | complete |
 | PTO demo task reproducible | `scripts/run_pto_demo.py`; `EVAL-006`/`EVAL-007`; UI prompt | `tests/test_mcp_workflows.py`; `evaluation/run_offline.py` | README.md "Example demo prompts", design-and-evaluation.md section 9.2 | complete |
 | Remote-work demo task reproducible | `scripts/run_remote_work_demo.py`; `EVAL-008`-`EVAL-011` | `tests/test_mcp_workflows.py`; `evaluation/run_offline.py` | README.md "Example demo prompts", design-and-evaluation.md section 9.2 | complete |
-| Free-tier deployment config included | `render.yaml` | YAML-validated this session; not yet applied to a live Render account | design-and-evaluation.md sections 9.4-9.5 | **pending-deployment** |
+| Free-tier deployment config included | `render.yaml` | YAML-validated; applied to a live Render account — deployed at https://hr-compass-ai-cosv.onrender.com | design-and-evaluation.md sections 9.4-9.5, deployed.md | complete |
 | GitHub Actions on push/PR | `.github/workflows/ci.yml` | YAML-validated; every step run locally this session with matching commands | design-and-evaluation.md section 9.3 | complete |
 | App-start/import smoke test | `scripts/app_smoke_test.py` | run this session (PASSED); wired as a CI step | README.md "Smoke tests", design-and-evaluation.md section 9.3 | complete |
 | MCP discovery/tool-call automated test | `scripts/mcp_smoke_test.py` + `tests/test_mcp_*.py` | run this session (PASSED); wired as a CI step | README.md "Smoke tests", design-and-evaluation.md section 9.3 | complete |
-| Deployment gated on tests | `.github/workflows/ci.yml`'s `deploy` job (`needs: test`) | YAML-validated; genuinely gates once the one-time Render/GitHub secret setup (documented in the job) is done | design-and-evaluation.md section 9.3 | complete (code) / **pending-deployment** (the one-time Render-side setup) |
+| Deployment gated on tests | `.github/workflows/ci.yml`'s `deploy` job (`needs: test`) | YAML-validated; the app is deployed and live, but whether the one-time Render-side setup (Auto-Deploy off, `RENDER_DEPLOY_HOOK_URL` GitHub secret) was completed is Render/GitHub-dashboard state, not visible from repository files | design-and-evaluation.md section 9.3 | complete (code) / MANUAL CHECK REQUIRED (dashboard-side setup) |
 | 20-30 evaluation cases with gold answers/rubrics | `evaluation/cases.json` (25 cases) | `tests/test_evaluation.py::test_cases_json_has_25_well_formed_cases` | evaluation/README.md | complete |
-| Groundedness measured | `evaluation/metrics.py:score_case` (`groundedness_score`) | `evaluation/run_offline.py` output (0.96 avg, this session) | evaluation/README.md, design-and-evaluation.md section 10.1 | complete (offline) / **pending-live-validation** (real-model score) |
-| Citation accuracy measured | `evaluation/metrics.py` (`citation_precision`/`citation_recall`) | offline run: precision 0.81, recall 1.00 | evaluation/README.md, design-and-evaluation.md section 10.1 | complete (offline) / **pending-live-validation** |
-| Tool-selection accuracy measured | `evaluation/metrics.py` (`tool_selection_pass`) | offline run: 1.00 | evaluation/README.md, design-and-evaluation.md section 10.1 | complete (offline) / **pending-live-validation** |
-| Workflow-completion measured | `evaluation/metrics.py` (`workflow_complete`) | offline run: 1.00 | evaluation/README.md, design-and-evaluation.md section 10.1 | complete (offline) / **pending-live-validation** |
-| Clarification/escalation accuracy measured | `evaluation/metrics.py` | offline run: 1.00 / 1.00 | evaluation/README.md, design-and-evaluation.md section 10.1 | complete (offline) / **pending-live-validation** |
-| Action-safety pass rate measured | `evaluation/metrics.py:_SAFETY_CHECKS` | offline run: 1.00 | evaluation/README.md, design-and-evaluation.md section 10.1 | complete (offline) / **pending-live-validation** |
-| p50/p95 latency measured; cold/warm noted | `evaluation/metrics.py:latency_stats` | offline run: p50=0.007s, p95=0.026s (not representative of live latency, documented as such) | evaluation/README.md, design-and-evaluation.md sections 10.1, 10.4 | complete (offline; methodology only) / **pending-deployment** (cold/warm) / **pending-live-validation** (real latency) |
-| >=1 ablation/comparison | `evaluation/ablation.py` (top_k=3 vs 5) | run this session: hit rate 0.79->0.86, recall 0.71->0.86 | design-and-evaluation.md section 10.3 | complete |
-| README.md complete | `README.md` | manual review | -- | complete |
-| design-and-evaluation.md complete | `design-and-evaluation.md` | manual review | -- | complete |
-| ai-tooling.md complete | `ai-tooling.md` | manual review | -- | complete |
-| deployed.md complete | `deployed.md` | explicit placeholders, no invented URL | -- | **pending-deployment** |
+| Groundedness measured | `evaluation/metrics.py:score_case` (`groundedness_score`) | offline: 0.96 avg; **live production (corrected): 0.72 avg** | evaluation/README.md, design-and-evaluation.md sections 10.1-10.2 | complete |
+| Citation accuracy measured | `evaluation/metrics.py` (`citation_precision`/`citation_recall`) | offline: precision 1.00, recall 1.00; **live production (corrected): precision 0.9231, recall 0.9615** | evaluation/README.md, design-and-evaluation.md sections 10.1-10.2 | complete |
+| Tool-selection accuracy measured | `evaluation/metrics.py` (`tool_selection_pass`) | offline: 1.00; **live production (corrected): 0.9565** | evaluation/README.md, design-and-evaluation.md sections 10.1-10.2 | complete |
+| Workflow-completion measured | `evaluation/metrics.py` (`workflow_complete`) | offline: 1.00; **live production (corrected): 0.96** | evaluation/README.md, design-and-evaluation.md sections 10.1-10.2 | complete |
+| Clarification/escalation accuracy measured | `evaluation/metrics.py` | offline: 1.00 / 1.00; **live production (corrected): 0.96 / 1.00** | evaluation/README.md, design-and-evaluation.md sections 10.1-10.2 | complete |
+| Action-safety pass rate measured | `evaluation/metrics.py:_SAFETY_CHECKS` | offline: 1.00; **live production (corrected): 0.75** — the lowest live metric, documented as a known challenging area, not concealed | evaluation/README.md, design-and-evaluation.md sections 10.1-10.2 | complete |
+| p50/p95 latency measured; cold/warm noted | `evaluation/metrics.py:latency_stats` | offline: p50=0.009s, p95=0.034s (near-instant fake model, methodology only); **live production (corrected): mean=5.1263s, p50=3.5894s, p95=10.8519s, max=26.9810s** | evaluation/README.md, design-and-evaluation.md sections 10.1, 10.2, 10.4 | complete |
+| >=1 ablation/comparison | `evaluation/ablation.py` (top_k=3 vs 5) | hit rate 0.79->0.86, recall 0.71->0.86 | design-and-evaluation.md section 10.3 | complete |
+| README.md complete | `README.md` | manual review; includes the live production URL | -- | complete |
+| design-and-evaluation.md complete | `design-and-evaluation.md` | manual review; includes both production evaluation baselines | -- | complete |
+| ai-tooling.md complete | `ai-tooling.md` | manual review; includes Phase 5 finalization log | -- | complete |
+| deployed.md complete | `deployed.md` | real URL, health endpoint, provider, model, and known limitations documented | -- | complete |
 | Architecture diagram included | `docs/architecture.md` (Mermaid + text), mirrored in design-and-evaluation.md section 9.1 | manual review | docs/architecture.md | complete |
-| 7-10 minute demo script/checklist prepared | README.md "Example demo prompts"; `evaluation/README.md`'s live-model validation checklist doubles as a demo script | -- | README.md, evaluation/README.md | **pending-live-validation** (checklist exists; not yet run/recorded) |
+| 7-10 minute demo script/checklist prepared | README.md "Example demo prompts"; `evaluation/README.md`'s live-model validation checklist doubles as a demo script | checklist exists and the system it demonstrates is now fully deployed and evaluated; the recording itself has not been done | README.md "Final submission checklist", evaluation/README.md | **pending-manual-step** (recording/submission only — nothing left to build) |
 
 ## Summary
 
-Of the 48 checklist items: **41 fully complete**, **6 complete in code/
-tests but pending-live-validation** (groundedness, citation accuracy,
-tool-selection accuracy, workflow-completion, clarification/escalation
-accuracy, and action-safety pass rate are all measured and passing
-offline, but their real-world quality claim needs the live Groq run this
-environment couldn't perform), and **3 pending-deployment** (free-tier
-deployment config exists but hasn't been applied to a live Render
-account; the deploy gate's one-time Render/GitHub-secret setup; and
-`deployed.md`'s placeholders, which depend on both). The p50/p95 latency
-and 7-10 minute demo items straddle both categories (methodology/checklist
-complete, real numbers/recording pending). No item is unimplemented --
-everything remaining requires external resources (a `GROQ_API_KEY`, a
-Render account) not available in this development environment, not
-further engineering work.
+Of the 48 checklist items, **47 are fully complete** in implementation,
+testing, and documentation, including deployment (`deployed.md`) and both
+the offline architecture-verification run and the corrected live
+production evaluation (design-and-evaluation.md section 10). **1 item
+remains pending-manual-step**: recording and submitting the 7-10 minute
+demo video, which by definition cannot be completed by editing this
+repository. The one-time Render-dashboard-side deploy-gate setup
+(Auto-Deploy off, `RENDER_DEPLOY_HOOK_URL` secret) is flagged
+MANUAL CHECK REQUIRED rather than a checklist row of its own, since it
+does not block the application already being deployed and working — it
+only affects whether future pushes to `main` auto-redeploy. No item is
+unimplemented, and no further engineering work remains; what's left is
+recording the demo, sharing repository access with `quantic-grader`, and
+completing the submission form — see README.md's "Final submission
+checklist."

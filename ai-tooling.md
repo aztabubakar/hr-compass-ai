@@ -265,3 +265,97 @@ CI `deploy` job's gating to actually take effect, since neither can be
 done from within this repository's code; filling in `deployed.md`'s
 placeholders once deployed; and recording the required 7-10 minute demo
 video against the real deployed system.
+
+### Phase 5 — Gemini migration, production deployment, citation fixes, and evaluation finalization
+
+Delegated to Claude Code, across several sessions once a `GEMINI_API_KEY`
+and a Render account became available:
+
+- **Migrating the production LLM provider from Groq to Gemini.** Added
+  `llm/gemini_provider.py` (`GeminiProvider`, via Google's official
+  `google-genai` SDK) behind the existing `llm.base.LLMProvider`
+  interface, with `llm/config.py` extended to construct either provider
+  from `LLM_PROVIDER`. No changes to `agent/` were needed to make the
+  switch, confirming the Phase 3 provider abstraction did its job.
+  `render.yaml` was updated to run Gemini in production; Groq remains
+  fully implemented and available as a one-environment-variable switch.
+- **A Gemini-specific tool-call history fix.** Gemini 3's API requires a
+  model turn's `thought_signature` to be preserved and replayed on the
+  *next* turn of a multi-turn tool-calling conversation, or the API
+  rejects the request; this has no equivalent in the OpenAI-compatible
+  shape Groq/`llm.base` was originally designed around.
+  `llm/gemini_provider.py` was extended to capture and replay this value
+  transparently, with `tests/test_gemini_provider.py` covering the
+  multi-turn round-trip explicitly.
+- **A production Render deployment**, using the existing `render.yaml`
+  blueprint unmodified in structure (only its `LLM_PROVIDER`/model env
+  vars changed). The app is live at
+  <https://hr-compass-ai-cosv.onrender.com> — see `deployed.md`.
+- **Two rounds of citation-attribution correction**, found via live
+  evaluation against the real deployment (not caught by the offline
+  scripted harness, since `FakeLLMProvider` never over-generates tool
+  calls the way a real model occasionally does):
+  1. **Document-level filtering** (`agent/tool_results.py`): the agent's
+     final answer was being credited with citations to every document any
+     tool call had touched during the conversation, not just the
+     documents the final answer text actually drew on — fixed by
+     filtering citations to those genuinely supporting the final answer.
+  2. **Section-level filtering**: even after (1), a multi-section document
+     could still over-attribute at the section level. An IDF-weighted
+     lexical relevance scorer was added to filter down to the specific
+     sections the final answer's own wording actually supports, with a
+     documented, disclosed limitation around partial matches in edge cases
+     (see design-and-evaluation.md section 7.11).
+- **A deployed-mode HTTP evaluator** (`evaluation/evaluator.py:run_case_http`,
+  `EVAL_BASE_URL` support in `evaluation/run_live.py`), so the same
+  25-case set can replay as real HTTP requests against a live URL instead
+  of requiring a local RAG index/MCP subprocess — including checkpointing,
+  `--resume`, and `--delay-between-cases` pacing for a free-tier
+  deployment's rate limits.
+- **A manually-triggered GitHub Actions production-evaluation workflow**
+  (`.github/workflows/live-evaluation.yml`, `workflow_dispatch`-only),
+  built because this development environment's own organization-level
+  egress policy blocks outbound requests to the Render hostname —
+  confirmed empirically (repeated direct connection failures) before
+  building around it rather than assuming. The workflow health-checks the
+  deployment, runs the deployed-mode evaluation, and uploads results as
+  the `hr-compass-live-evaluation` artifact, needing no repository
+  secrets.
+- **A read-only evaluator audit and narrow harness correction.** The first
+  full production run surfaced several cases where the evaluator's own
+  expectations, not the application, were wrong (e.g. an escalation flag
+  that could never be satisfied given the actual policy notice-period
+  math, and two cases expecting tool calls beyond what the request
+  actually required). A read-only audit confirmed each mismatch against
+  the real policy text and tool semantics before anything was changed;
+  only `evaluation/cases.json`, `evaluation/scripts.py`, and one metrics
+  helper were then corrected — the production application was not
+  touched, and both the original and corrected benchmark runs are
+  preserved for traceability (see `evaluation/README.md` and
+  `design-and-evaluation.md` section 10.2).
+- **Final benchmark**: corrected production evaluation — groundedness
+  0.72, citation recall 0.9615, citation precision 0.9231, tool-selection
+  0.9565, workflow-completion 0.96, clarification 0.96, escalation 1.00,
+  action-safety 0.75, latency mean 5.13s / p50 3.59s / p95 10.85s / max
+  26.98s, 0 errors across 25 cases.
+- **Final automated suite: 275 tests passed**, up from Phase 4's 145 —
+  the difference is `tests/test_gemini_provider.py` and
+  `tests/test_llm_provider_logging.py` (the Gemini migration), additions
+  to `tests/test_tool_results.py` (the two citation fixes), and additions
+  to `tests/test_evaluation.py`/`tests/test_evaluation_http.py` (the
+  deployed-mode evaluator and the harness correction).
+
+What required human review: the citation over-attribution bugs were only
+visible against a real model's actual behavior, not the offline scripted
+harness — underscoring why `design-and-evaluation.md` section 10.1
+explicitly warns that a passing offline run is an architecture check, not
+a quality measurement. The evaluator-audit-then-correct workflow (audit
+first, read-only; change only after the audit is reviewed) was used
+specifically so that "the evaluator was wrong" claims would not be taken
+on faith.
+
+Retained by the student: reviewing the corrected evaluation cases and
+this log's characterization of "evaluator was wrong, not the app" against
+the actual policy text before relying on it for the recorded demo;
+recording the required 7-10 minute demo video; and completing the
+remaining submission steps in README.md's "Final submission checklist."
