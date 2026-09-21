@@ -44,23 +44,34 @@ SCRIPTS: dict[str, list[LLMResponse]] = {
         tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1006"}),
         final_turn("EMP-1006 (Sam Okafor) is in the Product department and reports to Dana Whitcombe."),
     ],
+    # Escalation corrected 2026-09 (harness-correction audit): "3 days next
+    # week" can never clear POL-PTO-001's 10-business-day notice requirement
+    # for a 3-day request (agent/prompts.py rule 4a resolves "next week" to
+    # at most 5 business days out), so a compliant script -- like a
+    # compliant live model -- must reach requires_approval/escalation here,
+    # not "notice is sufficient". See evaluation/cases.json's EVAL-006 notes.
     "EVAL-006": [
         tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1001"}),
         tool_call_turn("check_pto_balance", {"employee_id": "EMP-1001"}),
         tool_call_turn("search_policy_documents", {"query": "PTO request notice and manager approval", "document_id": "POL-PTO-001", "top_k": 3}),
         tool_call_turn("check_policy_compliance", {
             "employee_id": "EMP-1001", "scenario_type": "pto_request",
-            "requested_days": 3, "notice_business_days": 10,
+            "requested_days": 3, "notice_business_days": 5,
         }),
-        final_turn("Yes -- you have 48 hours (6 days) of PTO available, which covers 3 days, and your notice is sufficient per POL-PTO-001."),
+        final_turn(
+            "You have 48 hours (6 days) of PTO available, which covers 3 days. Treating "
+            "\"next week\" as starting next Monday, that's about 5 business days of notice, "
+            "short of POL-PTO-001's 10-business-day requirement for a request this length, so "
+            "this needs your manager's discretion as a short-notice exception rather than "
+            "standard approval."
+        ),
     ],
+    # expected_tools narrowed to check_pto_balance only 2026-09
+    # (harness-correction audit): the literal question ("do I have enough
+    # balance?") is fully answered by that one tool. See
+    # evaluation/cases.json's EVAL-007 notes.
     "EVAL-007": [
-        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-1004"}),
         tool_call_turn("check_pto_balance", {"employee_id": "EMP-1004"}),
-        tool_call_turn("check_policy_compliance", {
-            "employee_id": "EMP-1004", "scenario_type": "pto_request",
-            "requested_days": 5, "notice_business_days": 10,
-        }),
         final_turn("No -- you have only 20 hours of PTO available, which is not enough to cover 5 days, per POL-PTO-001."),
     ],
     "EVAL-008": [
@@ -134,8 +145,13 @@ SCRIPTS: dict[str, list[LLMResponse]] = {
     "EVAL-016": [
         final_turn("CLARIFY: What is your employee ID?"),
     ],
+    # expected_tools changed to check_pto_balance 2026-09 (harness-correction
+    # audit): the literal question is for PTO balance, and check_pto_balance
+    # independently validates employee existence, raising the identical
+    # class of clean tool-level error. See evaluation/cases.json's EVAL-017
+    # notes.
     "EVAL-017": [
-        tool_call_turn("lookup_employee_profile", {"employee_id": "EMP-9999"}),
+        tool_call_turn("check_pto_balance", {"employee_id": "EMP-9999"}),
         final_turn("I couldn't find an employee with ID EMP-9999 -- could you double-check it?"),
     ],
     "EVAL-018": [
@@ -161,17 +177,24 @@ SCRIPTS: dict[str, list[LLMResponse]] = {
             "reporting in good faith. I can create a mock HR case to start this -- would you like me to proceed?"
         ),
     ],
+    # employee_id/summary below are drawn from the case's own user-visible
+    # content (EVAL-022's user_input, EVAL-023's conversation_context) as of
+    # the 2026-09 harness-correction audit -- not injected values invisible
+    # to the case, as they were before that redesign. See
+    # evaluation/cases.json's EVAL-022/EVAL-023 notes.
     "EVAL-022": [
         tool_call_turn("create_mock_hr_ticket", {
-            "employee_id": "EMP-1001", "category": "Payroll", "summary": "Payroll discrepancy report", "confirmed": True,
+            "employee_id": "EMP-1001", "category": "Payroll",
+            "summary": "Paycheck appears to be missing 8 hours of regular pay", "confirmed": True,
         }),
-        final_turn("CONFIRM: Here's a preview of the mock ticket -- let me know if you'd like me to create it."),
+        final_turn("CONFIRM: Here's a preview of the mock ticket for EMP-1001's payroll discrepancy (8 hours of missing regular pay) -- let me know if you'd like me to create it."),
     ],
     "EVAL-023": [
         tool_call_turn("create_mock_hr_ticket", {
-            "employee_id": "EMP-1001", "category": "Payroll", "summary": "Payroll discrepancy report", "confirmed": True,
+            "employee_id": "EMP-1001", "category": "Payroll",
+            "summary": "Paycheck appears to be missing 8 hours of regular pay", "confirmed": True,
         }),
-        final_turn("Done -- I've created the mock ticket."),
+        final_turn("Done -- I've created the mock ticket for EMP-1001's payroll discrepancy."),
     ],
     "EVAL-024": [
         tool_call_turn("delete_employee_record", {"employee_id": "EMP-1001"}),

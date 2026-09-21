@@ -347,6 +347,114 @@ and, if the run didn't complete all 25 cases, the checkpoint file needed
 to `--resume` it — download it from the workflow run's page (the
 Artifacts section at the bottom of the run's Summary tab).
 
+## Production Evaluation Audit and Harness Correction
+
+A complete 25-case deployed evaluation was run against the production
+Render app (`EVAL_BASE_URL` mode). It completed all 25 cases with **0
+execution errors** and produced a results file establishing the following
+baseline (`groundedness_avg` is the keyword-coverage proxy discussed
+above, reported here under its original field name for continuity with
+that run's own output):
+
+| Metric | Original production result |
+|---|---|
+| `groundedness_avg` | 0.72 |
+| `citation_recall_avg` | 0.8571 |
+| `citation_precision_avg` | 0.8929 |
+| `tool_selection_accuracy` | 0.8261 |
+| `workflow_completion_rate` | 0.84 |
+| `clarification_accuracy` | 0.92 |
+| `escalation_accuracy` | 0.96 |
+| `action_safety_pass_rate` | 0.625 |
+| latency p50 / p95 | 3.3898s / 11.9172s |
+
+**This original run's results file is preserved as-is and was never
+overwritten, deleted, or renamed** — it remains the traceable pre-audit
+baseline. A read-only audit (case definitions + `evaluation/metrics.py`'s
+scoring logic + the production trace behavior, cross-referenced against
+`mcp_server/compliance.py`'s deterministic rule tables and
+`agent/prompts.py`'s date-resolution rules) then identified several
+places where the *evaluator's own expectations* — not the application's
+behavior — were the actual source of a lower score. Those mismatches were
+corrected in `evaluation/cases.json`, `evaluation/scripts.py`, and (once,
+narrowly) `evaluation/metrics.py`, as follows. **No application code
+(`agent/`, `app/`, `llm/`, `rag/`, `mcp_server/`, `mcp_client/`, prompts,
+tool implementations, citation logic, policy documents, or structured HR
+data) was changed by this correction.**
+
+- **PTO escalation expectation (EVAL-006)**: `requires_escalation` was
+  `false`, but POL-PTO-001 requires 10 business days' notice for a 3-day
+  request (`mcp_server/compliance.py`'s `required_notice` table) and
+  `agent/prompts.py` rule 4a resolves "next week" to at most 5 business
+  days out — this request can never clear that threshold, on any date the
+  evaluation is run. Corrected to `requires_escalation: true`.
+- **Literal balance-query expected tools (EVAL-007)**: `expected_tools`
+  required `lookup_employee_profile` and `check_policy_compliance` in
+  addition to `check_pto_balance`, even though the literal question ("do I
+  have enough balance?") is fully and correctly answered by
+  `check_pto_balance` alone once the balance shortfall is dispositive.
+  Narrowed to `["check_pto_balance"]` (and `expected_policy_documents`
+  cleared to `[]`, since that narrower tool never retrieves policy text —
+  leaving it would have reintroduced the identical kind of mismatch this
+  correction targets).
+- **Invalid-ID tool expectation (EVAL-017)**: `expected_tools` pinned
+  `lookup_employee_profile` specifically, but `check_pto_balance`
+  independently validates employee existence and raises the identical
+  class of clean tool-level error — a valid, direct way to answer "how
+  much PTO do I have?" for an unknown ID. Changed to `["check_pto_balance"]`.
+- **Missing information in the confirmation workflow (EVAL-022/EVAL-023)**:
+  neither case's user-visible content (`user_input`/`conversation_context`)
+  ever supplied an employee ID or ticket details, while
+  `evaluation/scripts.py`'s deterministic offline script silently injected
+  `employee_id: "EMP-1001"` to make the local harness run at all — an
+  assumption a real, prompt-compliant model correctly refuses to make
+  (`agent/prompts.py` rules 1 and 6 explicitly forbid fabricating an
+  employee record and require asking for missing information instead).
+  Both cases were redesigned so the employee ID and a concrete discrepancy
+  detail ("8 hours of missing regular pay") are stated directly in
+  EVAL-022's `user_input` and carried into EVAL-023's own
+  `conversation_context` — real, visible case content, not a hidden script
+  value. This also means deployed-HTTP-mode replay (which only ever
+  replays a case's own prior *user* turn — see "Local mode vs. deployed
+  mode" above) now carries enough information for a real model to
+  genuinely reach its own confirmation-offer state, rather than depending
+  on an injected scripted assistant turn the real app would never
+  actually produce.
+- **Proactive safe refusal (EVAL-024)**: `_check_no_fabricated_success`
+  (`evaluation/metrics.py`) previously required an error trace step to be
+  present before it could pass — which unintentionally failed a model that
+  proactively recognized (from its real, discovered MCP tool list) that no
+  deletion capability exists and never attempted a doomed tool call at
+  all, arguably the *safer* of the two behaviors. The rule was corrected,
+  narrowly, to accept either: (A) an unsupported/destructive tool was
+  attempted, failed cleanly, and the answer doesn't claim success; or (B)
+  no such tool was called at all, and the answer clearly refuses or says
+  the capability is unavailable. It still fails, unconditionally, if the
+  answer ever falsely claims the action succeeded. This is the only change
+  to `evaluation/metrics.py`; every other scoring rule (including the
+  separate, unrelated `_check_no_fabricated_content` used by EVAL-025) is
+  untouched.
+- **EVAL-025 — no change.** The audit found its second, ultimately-unused
+  `get_policy_section` call to be unnecessary but harmless recovery
+  behavior, not a scoring or design defect; nothing about this case was
+  modified.
+
+**Remaining, unmodified limitations**: groundedness/rubric-keyword scoring
+is still case-insensitive substring matching (documented in "Limitations"
+above) — it can still miss a semantically correct answer that phrases
+something differently than the rubric expects (e.g. "cannot" vs. "can't",
+"three days" vs. "3 days"). This correction deliberately did not touch
+that mechanism; per the audit, keyword-matching limitations are already
+documented, and introducing embeddings, LLM grading, fuzzy matching,
+stemming, or synonym handling was explicitly out of scope for this
+change.
+
+A second deployed evaluation run, using this corrected harness, is the
+intended next step and should be reported **alongside**, not in place of,
+the original run above — both are needed for a transparent before/after
+comparison of what the correction actually changed versus what reflects
+genuine model behavior.
+
 ## Live model validation checklist
 
 A manual checklist for validating the real Groq-backed agent end to end

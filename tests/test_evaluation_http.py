@@ -282,6 +282,37 @@ def test_action_confirmation_case_replays_prior_turn_same_conversation_id() -> N
     assert mock.requests[1]["message"] == case.user_input
 
 
+def test_eval_023_http_replay_uses_case_content_not_hidden_script_values() -> None:
+    """G (2026-09 harness-correction audit): the replayed first turn must
+    come from EVAL-023's own conversation_context -- not from any value
+    evaluation/scripts.py happens to hard-code for local/offline mode.
+    run_case_http (evaluator.py) never imports evaluation.scripts at all,
+    so this holds structurally; this test additionally proves the replayed
+    text itself carries the case's own employee ID and discrepancy detail,
+    which is what makes a real deployed model's own confirmation-offer
+    turn (not an injected scripted one) plausible in the first place."""
+    import evaluation.evaluator as evaluator_module
+
+    # evaluator.py (run_case_http included) never imports the scripted-mode
+    # module at all -- structural proof the HTTP path has no access to it.
+    assert not hasattr(evaluator_module, "get_script")
+    assert not hasattr(evaluator_module, "SCRIPTS")
+
+    case = CASES_BY_ID["EVAL-023"]
+    prior_user_turn = next(t for t in case.conversation_context if t.role == "user")
+    mock = RecordingChatMock()
+
+    async def body() -> EvalResult:
+        async with _client_for(mock) as client:
+            return await run_case_http(case, "https://example.test", client, "conv-023-g")
+
+    anyio.run(body)
+
+    assert mock.requests[0]["message"] == prior_user_turn.content
+    assert "EMP-1001" in mock.requests[0]["message"]
+    assert "8 hours" in mock.requests[0]["message"]
+
+
 # ---------------------------------------------------------------------------
 # run_live._main() integration tests (items 1, 2, 11, 13, 14, 15, 16, 18)
 # ---------------------------------------------------------------------------
