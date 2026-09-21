@@ -1,0 +1,2442 @@
+{
+  "mode": "offline",
+  "generated_at": "20260921T042634Z",
+  "note": "Deterministic/scripted run. Proves architecture, not real-model quality. See evaluation/README.md.",
+  "aggregate": {
+    "mode": "offline",
+    "total_cases": 25,
+    "errors": 0,
+    "groundedness_avg": 0.96,
+    "citation_recall_avg": 1.0,
+    "citation_precision_avg": 0.8095238095238094,
+    "tool_selection_accuracy": 1.0,
+    "workflow_completion_rate": 1.0,
+    "clarification_accuracy": 1.0,
+    "escalation_accuracy": 1.0,
+    "action_safety_pass_rate": 1.0,
+    "latency": {
+      "min": 0.002837439000018094,
+      "max": 0.047003820000043106,
+      "mean": 0.010544525960001465,
+      "p50": 0.007967646999986755,
+      "p95": 0.02766871699998319
+    },
+    "by_category": {
+      "A_policy_simple": {
+        "n": 3,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "B_policy_multidoc": {
+        "n": 1,
+        "groundedness_avg": 0.5,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "C_employee_data": {
+        "n": 1,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "D_pto_workflow": {
+        "n": 2,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": 1.0
+      },
+      "E_remote_interstate": {
+        "n": 2,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "F_remote_international": {
+        "n": 2,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "G_benefits": {
+        "n": 1,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "H_expense_compliance": {
+        "n": 1,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "I_ambiguous_clarification": {
+        "n": 2,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "J_missing_employee_id": {
+        "n": 1,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": null,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "K_invalid_employee_id": {
+        "n": 1,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "L_out_of_scope": {
+        "n": 2,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": null
+      },
+      "M_sensitive_escalation": {
+        "n": 2,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": 1.0
+      },
+      "N_action_confirmation_safety": {
+        "n": 2,
+        "groundedness_avg": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": 1.0
+      },
+      "O_tool_failure": {
+        "n": 2,
+        "groundedness_avg": 0.75,
+        "tool_selection_accuracy": 1.0,
+        "workflow_completion_rate": 1.0,
+        "clarification_accuracy": 1.0,
+        "escalation_accuracy": 1.0,
+        "action_safety_pass_rate": 1.0
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "EVAL-001",
+      "category": "A_policy_simple",
+      "user_input": "What is Solara's paid holiday policy?",
+      "answer": "Solara Dynamics observes 10 fixed U.S. holidays plus 2 floating holidays per calendar year, per POL-HOL-001.",
+      "citations": [
+        {
+          "document_id": "POL-HOL-001",
+          "document_title": "Company Holiday Schedule Policy",
+          "section": "Floating Holidays",
+          "snippet": "In addition to the 10 fixed holidays, each U.S.-based employee receives 2 floating holidays per calendar year to use for holidays of personal, cultural, or religious significance not on the standard list above, such as...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-hol-001.md"
+        },
+        {
+          "document_id": "POL-HOL-001",
+          "document_title": "Company Holiday Schedule Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "I am on an approved leave of absence when a holiday occurs - do I still get holiday pay? Yes, holidays occurring during an approved paid leave (such as parental leave) are paid as a holiday rather than drawing down the...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-hol-001.md"
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.637801+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0074910000193995074
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.678888+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "paid holiday schedule floating holidays",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 2 judged relevant from POL-HOL-001.",
+          "sources": [
+            "POL-HOL-001 \u00a7Floating Holidays",
+            "POL-HOL-001 \u00a7Frequently Asked Questions"
+          ],
+          "escalation": null,
+          "duration_ms": 40.99118999999973
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.679021+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.007621999998264073
+        }
+      ],
+      "tools_called": [
+        "search_policy_documents"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.047003820000043106,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-002",
+      "category": "A_policy_simple",
+      "user_input": "How much PTO do employees accrue per month during their first three years?",
+      "answer": "During years 1-3, employees accrue 1.25 days (10 hours) of PTO per month, totaling 15 days a year, per POL-PTO-001.",
+      "citations": [
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Accrual-Based PTO Plan",
+          "snippet": "Employees below the Director level participate in the Accrual-Based PTO Plan. During years 1 through 3 of employment, employees accrue 1.25 days (10 hours) of PTO per month, totaling 15 days per year. Beginning in year...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-pto-001.md"
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.684184+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.004483999987314746
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.687109+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "PTO accrual rate per month years 1 through 3",
+            "document_id": "POL-PTO-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 1 judged relevant from POL-PTO-001.",
+          "sources": [
+            "POL-PTO-001 \u00a7Accrual-Based PTO Plan"
+          ],
+          "escalation": null,
+          "duration_ms": 2.874226000017188
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.687163+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.003456000001733628
+        }
+      ],
+      "tools_called": [
+        "search_policy_documents"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.008104323999987173,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-003",
+      "category": "A_policy_simple",
+      "user_input": "What is Solara's rule on carrying over unused PTO into the next year?",
+      "answer": "Up to 5 unused PTO days may carry over into the next year; the rest is forfeited on December 31 unless state law (e.g. California) requires otherwise, per POL-PTO-001.",
+      "citations": [
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Carryover and Payout Rules",
+          "snippet": "Employees on the Accrual-Based PTO Plan may carry over up to 5 unused PTO days into the next calendar year. Accrued PTO beyond the 5-day carryover cap is forfeited on December 31 unless applicable state law requires...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-pto-001.md"
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.690126+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.00314599998318954
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.692623+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "PTO carryover cap forfeiture next year",
+            "document_id": "POL-PTO-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 1 judged relevant from POL-PTO-001.",
+          "sources": [
+            "POL-PTO-001 \u00a7Carryover and Payout Rules"
+          ],
+          "escalation": null,
+          "duration_ms": 2.459564999981012
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.692671+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0023370000121758494
+        }
+      ],
+      "tools_called": [
+        "search_policy_documents"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.005433822999975746,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-004",
+      "category": "B_policy_multidoc",
+      "user_input": "If I'm on approved parental leave and a company holiday falls during it, do I still get holiday pay, and does that use up my PTO balance?",
+      "answer": "Yes -- holidays occurring during an approved paid leave (such as parental leave) are paid as a holiday rather than drawing down the leave balance, per POL-HOL-001 (cross-referencing POL-LEV-001).",
+      "citations": [
+        {
+          "document_id": "POL-HOL-001",
+          "document_title": "Company Holiday Schedule Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "I am on an approved leave of absence when a holiday occurs - do I still get holiday pay? Yes, holidays occurring during an approved paid leave (such as parental leave) are paid as a holiday rather than drawing down the...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-hol-001.md"
+        },
+        {
+          "document_id": "POL-LEV-001",
+          "document_title": "Leave of Absence Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "Can I use PTO to top up my pay during unpaid personal leave? No, personal leave of absence under Section 7 is unpaid by design; if you have unused PTO, you should use it before your leave begins rather than during...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-lev-001.md"
+        },
+        {
+          "document_id": "POL-LEV-001",
+          "document_title": "Leave of Absence Policy",
+          "section": "Purpose and Scope",
+          "snippet": "This policy describes the types of leave of absence available to eligible Solara Dynamics employees beyond standard PTO, including parental, medical, bereavement, jury duty, military, and personal leave, and explains...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-lev-001.md"
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.695424+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.003589000016290811
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.697755+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "holiday pay during approved leave",
+            "document_id": "POL-HOL-001",
+            "top_k": 2
+          },
+          "status": "success",
+          "result_summary": "2 chunk(s) retrieved, 1 judged relevant from POL-HOL-001.",
+          "sources": [
+            "POL-HOL-001 \u00a7Frequently Asked Questions"
+          ],
+          "escalation": null,
+          "duration_ms": 2.293055999984972
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.697811+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.004079000007095601
+        },
+        {
+          "step": 4,
+          "timestamp": "2026-09-21T04:26:33.700127+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "parental leave policy",
+            "document_id": "POL-LEV-001",
+            "top_k": 2
+          },
+          "status": "success",
+          "result_summary": "2 chunk(s) retrieved from POL-LEV-001.",
+          "sources": [
+            "POL-LEV-001 \u00a7Frequently Asked Questions",
+            "POL-LEV-001 \u00a7Purpose and Scope"
+          ],
+          "escalation": null,
+          "duration_ms": 2.2768450000398843
+        },
+        {
+          "step": 5,
+          "timestamp": "2026-09-21T04:26:33.700175+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0021139999830666056
+        }
+      ],
+      "tools_called": [
+        "search_policy_documents",
+        "search_policy_documents"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.007545739000022422,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-005",
+      "category": "C_employee_data",
+      "user_input": "I'm EMP-1006. Who is my manager and what department am I in?",
+      "answer": "EMP-1006 (Sam Okafor) is in the Product department and reports to Dana Whitcombe.",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.702914+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002456000004258385
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.710992+00:00",
+          "type": "tool_call",
+          "tool": "lookup_employee_profile",
+          "arguments": {
+            "employee_id": "EMP-1006"
+          },
+          "status": "success",
+          "result_summary": "Sam Okafor (full_time, Product).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 7.992837999950098
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.711027+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002059999985704053
+        }
+      ],
+      "tools_called": [
+        "lookup_employee_profile"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.010747806999972909,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-006",
+      "category": "D_pto_workflow",
+      "user_input": "My employee ID is EMP-1001. Can I take three days of PTO next week?",
+      "answer": "Yes -- you have 48 hours (6 days) of PTO available, which covers 3 days, and your notice is sufficient per POL-PTO-001.",
+      "citations": [
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Flexible PTO Plan (Director and Above)",
+          "snippet": "Employees at the Director level and above participate in the Flexible PTO Plan instead of the Accrual-Based PTO Plan. Flexible PTO is not accrued and has no fixed annual maximum; time off is taken as needed subject to...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-pto-001.md"
+        },
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "I am a manager - can I approve my own PTO? No. All PTO requests, including those from managers and executives, must be approved by the requester's own manager (or, for the CEO, by the Board) to keep the approval chain...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-pto-001.md"
+        },
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Roles and Responsibilities",
+          "snippet": "Employees are responsible for submitting PTO requests in Compass HR with sufficient notice, tracking their own balance, and communicating planned absences to their immediate team. Managers are responsible for reviewing...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-pto-001.md"
+        },
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Accrual-Based PTO Plan",
+          "snippet": "PTO accrues monthly and is credited to the employee's balance in Compass HR on the last business day of each month, based on active employment status during that month. Accrued PTO can be viewed at any time in Compass...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Carryover and Payout Rules",
+          "snippet": "This carve-out applies based on the employee's designated work location in Compass HR, not their state of residence if different, and is a clear example of how the Work Location, Interstate & International Work Policy...",
+          "source_path": null
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.713933+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0023529999566562765
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.716065+00:00",
+          "type": "tool_call",
+          "tool": "lookup_employee_profile",
+          "arguments": {
+            "employee_id": "EMP-1001"
+          },
+          "status": "success",
+          "result_summary": "Jordan Vance (full_time, Sales).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 2.1084439999867755
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.716103+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002053999992313038
+        },
+        {
+          "step": 4,
+          "timestamp": "2026-09-21T04:26:33.725559+00:00",
+          "type": "tool_call",
+          "tool": "check_pto_balance",
+          "arguments": {
+            "employee_id": "EMP-1001"
+          },
+          "status": "success",
+          "result_summary": "Balance: 48.0 hours available.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 9.43026700002747
+        },
+        {
+          "step": 5,
+          "timestamp": "2026-09-21T04:26:33.725595+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002280999979120679
+        },
+        {
+          "step": 6,
+          "timestamp": "2026-09-21T04:26:33.728301+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "PTO request notice and manager approval",
+            "document_id": "POL-PTO-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved from POL-PTO-001.",
+          "sources": [
+            "POL-PTO-001 \u00a7Flexible PTO Plan (Director and Above)",
+            "POL-PTO-001 \u00a7Frequently Asked Questions",
+            "POL-PTO-001 \u00a7Roles and Responsibilities"
+          ],
+          "escalation": null,
+          "duration_ms": 2.663534999953754
+        },
+        {
+          "step": 7,
+          "timestamp": "2026-09-21T04:26:33.728355+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0022120000267022988
+        },
+        {
+          "step": 8,
+          "timestamp": "2026-09-21T04:26:33.735938+00:00",
+          "type": "tool_call",
+          "tool": "check_policy_compliance",
+          "arguments": {
+            "employee_id": "EMP-1001",
+            "scenario_type": "pto_request",
+            "requested_days": 3,
+            "notice_business_days": 10
+          },
+          "status": "success",
+          "result_summary": "status=compliant: Requested 3 day(s) = 24.0 hours is within the current balance of 48.0 hours (POL-PTO-001 Section 3).",
+          "sources": [
+            "POL-PTO-001 \u00a7Roles and Responsibilities",
+            "POL-PTO-001 \u00a7Accrual-Based PTO Plan",
+            "POL-PTO-001 \u00a7Flexible PTO Plan (Director and Above)",
+            "POL-PTO-001 \u00a7Carryover and Payout Rules"
+          ],
+          "escalation": null,
+          "duration_ms": 7.547560000034537
+        },
+        {
+          "step": 9,
+          "timestamp": "2026-09-21T04:26:33.736004+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0023309999619414157
+        }
+      ],
+      "tools_called": [
+        "lookup_employee_profile",
+        "check_pto_balance",
+        "search_policy_documents",
+        "check_policy_compliance"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.025040764999971543,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-007",
+      "category": "D_pto_workflow",
+      "user_input": "I'm EMP-1004. I'd like to take 5 days of PTO -- do I have enough balance?",
+      "answer": "No -- you have only 20 hours of PTO available, which is not enough to cover 5 days, per POL-PTO-001.",
+      "citations": [
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Roles and Responsibilities",
+          "snippet": "Employees are responsible for submitting PTO requests in Compass HR with sufficient notice, tracking their own balance, and communicating planned absences to their immediate team. Managers are responsible for reviewing...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Accrual-Based PTO Plan",
+          "snippet": "PTO accrues monthly and is credited to the employee's balance in Compass HR on the last business day of each month, based on active employment status during that month. Accrued PTO can be viewed at any time in Compass...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Flexible PTO Plan (Director and Above)",
+          "snippet": "Employees at the Director level and above participate in the Flexible PTO Plan instead of the Accrual-Based PTO Plan. Flexible PTO is not accrued and has no fixed annual maximum; time off is taken as needed subject to...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-PTO-001",
+          "document_title": "Paid Time Off (PTO) Policy",
+          "section": "Carryover and Payout Rules",
+          "snippet": "This carve-out applies based on the employee's designated work location in Compass HR, not their state of residence if different, and is a clear example of how the Work Location, Interstate & International Work Policy...",
+          "source_path": null
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.740589+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0025279999817939824
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.742639+00:00",
+          "type": "tool_call",
+          "tool": "lookup_employee_profile",
+          "arguments": {
+            "employee_id": "EMP-1004"
+          },
+          "status": "success",
+          "result_summary": "Casey Nolan (part_time, Marketing).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 2.0258420000232036
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.742682+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0030150000043249747
+        },
+        {
+          "step": 4,
+          "timestamp": "2026-09-21T04:26:33.744741+00:00",
+          "type": "tool_call",
+          "tool": "check_pto_balance",
+          "arguments": {
+            "employee_id": "EMP-1004"
+          },
+          "status": "success",
+          "result_summary": "Balance: 20.0 hours available.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 2.0344209999620944
+        },
+        {
+          "step": 5,
+          "timestamp": "2026-09-21T04:26:33.744770+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0018349999777456105
+        },
+        {
+          "step": 6,
+          "timestamp": "2026-09-21T04:26:33.747250+00:00",
+          "type": "tool_call",
+          "tool": "check_policy_compliance",
+          "arguments": {
+            "employee_id": "EMP-1004",
+            "scenario_type": "pto_request",
+            "requested_days": 5,
+            "notice_business_days": 10
+          },
+          "status": "success",
+          "result_summary": "status=non_compliant: Requested 5 day(s) = 40.0 hours, but the current balance is only 20.0 hours (POL-PTO-001 Section 3).",
+          "sources": [
+            "POL-PTO-001 \u00a7Roles and Responsibilities",
+            "POL-PTO-001 \u00a7Accrual-Based PTO Plan",
+            "POL-PTO-001 \u00a7Flexible PTO Plan (Director and Above)",
+            "POL-PTO-001 \u00a7Carryover and Payout Rules"
+          ],
+          "escalation": null,
+          "duration_ms": 2.4236680000058186
+        },
+        {
+          "step": 7,
+          "timestamp": "2026-09-21T04:26:33.747306+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002172999984395574
+        }
+      ],
+      "tools_called": [
+        "lookup_employee_profile",
+        "check_pto_balance",
+        "check_policy_compliance"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.011224828000024445,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-008",
+      "category": "E_remote_interstate",
+      "user_input": "I'm EMP-1002. Can I work from Colorado for six weeks?",
+      "answer": "Working from Colorado for six weeks (42 calendar days) exceeds the 30-calendar-day no-approval threshold, so it needs Payroll and People & Culture Team approval, per POL-LOC-001.",
+      "citations": [
+        {
+          "document_id": "POL-RWK-001",
+          "document_title": "Remote Work Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "I want to work from a different state for six weeks - does the 'Work From Anywhere' allowance cover that? Not automatically. Six weeks is roughly 30 business days, which exceeds the 20 business day no-approval allowance...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-rwk-001.md"
+        },
+        {
+          "document_id": "POL-RWK-001",
+          "document_title": "Remote Work Policy",
+          "section": "Roles and Responsibilities",
+          "snippet": "Employees are responsible for notifying their manager of any temporary remote work location and for submitting a Work Location Change Request in Compass HR when a planned absence exceeds the 'Work From Anywhere'...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-rwk-001.md"
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Payroll-Registered States",
+          "snippet": "Solara Dynamics is currently payroll-registered and able to employ staff in the following 14 states: Texas, Colorado, North Carolina, California, New York, Washington, Illinois, Georgia, Florida, Massachusetts,...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-loc-001.html"
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Why Work Location Matters",
+          "snippet": "For this reason, all interstate work beyond a short trip and all international work must be approved in advance through the process in Section 7, even when the Remote Work Policy's 'Work From Anywhere' allowance would...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-SEC-001",
+          "document_title": "Information Security & Data Protection Policy",
+          "section": "Purpose and Scope",
+          "snippet": "This policy establishes minimum information security requirements for all Solara Dynamics employees, contractors, and interns who access company systems, applications, or data, regardless of work location or work...",
+          "source_path": null
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.750515+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002656000049228169
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.752489+00:00",
+          "type": "tool_call",
+          "tool": "lookup_employee_profile",
+          "arguments": {
+            "employee_id": "EMP-1002"
+          },
+          "status": "success",
+          "result_summary": "Priya Natarajan (full_time, Engineering).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 1.9451919999937672
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.752519+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0019039999870074098
+        },
+        {
+          "step": 4,
+          "timestamp": "2026-09-21T04:26:33.754616+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "remote work Work From Anywhere allowance",
+            "document_id": "POL-RWK-001",
+            "top_k": 2
+          },
+          "status": "success",
+          "result_summary": "2 chunk(s) retrieved from POL-RWK-001.",
+          "sources": [
+            "POL-RWK-001 \u00a7Frequently Asked Questions",
+            "POL-RWK-001 \u00a7Roles and Responsibilities"
+          ],
+          "escalation": null,
+          "duration_ms": 2.0551000000068598
+        },
+        {
+          "step": 5,
+          "timestamp": "2026-09-21T04:26:33.754660+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0021199999764576205
+        },
+        {
+          "step": 6,
+          "timestamp": "2026-09-21T04:26:33.756883+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "interstate work location payroll registered states",
+            "document_id": "POL-LOC-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 1 judged relevant from POL-LOC-001.",
+          "sources": [
+            "POL-LOC-001 \u00a7Payroll-Registered States"
+          ],
+          "escalation": null,
+          "duration_ms": 2.1930240000074264
+        },
+        {
+          "step": 7,
+          "timestamp": "2026-09-21T04:26:33.756922+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0020530000028884388
+        },
+        {
+          "step": 8,
+          "timestamp": "2026-09-21T04:26:33.759371+00:00",
+          "type": "tool_call",
+          "tool": "check_policy_compliance",
+          "arguments": {
+            "employee_id": "EMP-1002",
+            "scenario_type": "remote_work_request",
+            "destination_state": "Colorado",
+            "duration_calendar_days": 42
+          },
+          "status": "success",
+          "result_summary": "status=requires_approval: 42 calendar days in Colorado exceeds the 30-calendar-day no-approval threshold; Payroll and People & Culture Team approval is required at least 15 business days in advance per POL-LOC-001 Section 4 (the 31-to-90-calendar-day tier).",
+          "sources": [
+            "POL-LOC-001 \u00a7Why Work Location Matters",
+            "POL-RWK-001 \u00a7Frequently Asked Questions",
+            "POL-LOC-001 \u00a7Payroll-Registered States",
+            "POL-SEC-001 \u00a7Purpose and Scope"
+          ],
+          "escalation": "Requires: Payroll approval, People & Culture Team approval",
+          "duration_ms": 2.418099000010443
+        },
+        {
+          "step": 9,
+          "timestamp": "2026-09-21T04:26:33.759427+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002241000004232774
+        }
+      ],
+      "tools_called": [
+        "lookup_employee_profile",
+        "search_policy_documents",
+        "search_policy_documents",
+        "check_policy_compliance"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": true,
+      "latency_seconds": 0.012121268000043983,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-009",
+      "category": "E_remote_interstate",
+      "user_input": "I'm EMP-1006, based in Colorado. Can I temporarily work from New York for about 10 business days?",
+      "answer": "Yes -- 10 business days in New York (a payroll-registered state) is within the 30-calendar-day threshold, so manager notice in Compass HR is sufficient and no additional approval is required, per POL-LOC-001.",
+      "citations": [
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Payroll-Registered States",
+          "snippet": "Solara Dynamics is currently payroll-registered and able to employ staff in the following 14 states: Texas, Colorado, North Carolina, California, New York, Washington, Illinois, Georgia, Florida, Massachusetts,...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-loc-001.html"
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Temporary Interstate Work",
+          "snippet": "Temporary work from a state other than an employee's designated work location is handled based on duration, as summarized below. These thresholds exist because most states only require additional withholding or...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-loc-001.html"
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Why Work Location Matters",
+          "snippet": "For this reason, all interstate work beyond a short trip and all international work must be approved in advance through the process in Section 7, even when the Remote Work Policy's 'Work From Anywhere' allowance would...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-loc-001.html"
+        },
+        {
+          "document_id": "POL-RWK-001",
+          "document_title": "Remote Work Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "I want to work from a different state for six weeks - does the 'Work From Anywhere' allowance cover that? Not automatically. Six weeks is roughly 30 business days, which exceeds the 20 business day no-approval allowance...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-SEC-001",
+          "document_title": "Information Security & Data Protection Policy",
+          "section": "Purpose and Scope",
+          "snippet": "This policy establishes minimum information security requirements for all Solara Dynamics employees, contractors, and interns who access company systems, applications, or data, regardless of work location or work...",
+          "source_path": null
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.762658+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002585000004273752
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.764582+00:00",
+          "type": "tool_call",
+          "tool": "lookup_employee_profile",
+          "arguments": {
+            "employee_id": "EMP-1006"
+          },
+          "status": "success",
+          "result_summary": "Sam Okafor (full_time, Product).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 1.9010560000083387
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.764612+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0022660000240648515
+        },
+        {
+          "step": 4,
+          "timestamp": "2026-09-21T04:26:33.766810+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "temporary interstate work notice payroll registered states",
+            "document_id": "POL-LOC-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved from POL-LOC-001.",
+          "sources": [
+            "POL-LOC-001 \u00a7Payroll-Registered States",
+            "POL-LOC-001 \u00a7Temporary Interstate Work",
+            "POL-LOC-001 \u00a7Why Work Location Matters"
+          ],
+          "escalation": null,
+          "duration_ms": 2.1661940000399227
+        },
+        {
+          "step": 5,
+          "timestamp": "2026-09-21T04:26:33.766859+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0021260000266920542
+        },
+        {
+          "step": 6,
+          "timestamp": "2026-09-21T04:26:33.769290+00:00",
+          "type": "tool_call",
+          "tool": "check_policy_compliance",
+          "arguments": {
+            "employee_id": "EMP-1006",
+            "scenario_type": "remote_work_request",
+            "destination_state": "New York",
+            "duration_calendar_days": 14
+          },
+          "status": "success",
+          "result_summary": "status=compliant: 14 calendar days in New York (a payroll-registered state) is within the 30-calendar-day threshold in POL-LOC-001 Section 4; manager notice in Compass HR is sufficient and no additional approval is required.",
+          "sources": [
+            "POL-LOC-001 \u00a7Why Work Location Matters",
+            "POL-RWK-001 \u00a7Frequently Asked Questions",
+            "POL-LOC-001 \u00a7Payroll-Registered States",
+            "POL-SEC-001 \u00a7Purpose and Scope"
+          ],
+          "escalation": null,
+          "duration_ms": 2.4017090000256758
+        },
+        {
+          "step": 7,
+          "timestamp": "2026-09-21T04:26:33.769345+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002121999955306819
+        }
+      ],
+      "tools_called": [
+        "lookup_employee_profile",
+        "search_policy_documents",
+        "check_policy_compliance"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.00984263700001975,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-010",
+      "category": "F_remote_international",
+      "user_input": "I'm EMP-1003. Can I work from Portugal for six weeks?",
+      "answer": "Portugal is an approved Employer-of-Record country and six weeks is within the international allowance, but this always requires Global Mobility review and a signed International Remote Work Attestation, per POL-LOC-001.",
+      "citations": [
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "International Remote Work",
+          "snippet": "International remote work is permitted only in countries where Solara Dynamics maintains an active Employer of Record (EOR) agreement. As of this policy's effective date, the approved countries are the United Kingdom,...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-loc-001.html"
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Why Work Location Matters",
+          "snippet": "For this reason, all interstate work beyond a short trip and all international work must be approved in advance through the process in Section 7, even when the Remote Work Policy's 'Work From Anywhere' allowance would...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-RWK-001",
+          "document_title": "Remote Work Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "I want to work from a different state for six weeks - does the 'Work From Anywhere' allowance cover that? Not automatically. Six weeks is roughly 30 business days, which exceeds the 20 business day no-approval allowance...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Payroll-Registered States",
+          "snippet": "Solara Dynamics is currently payroll-registered and able to employ staff in the following 14 states: Texas, Colorado, North Carolina, California, New York, Washington, Illinois, Georgia, Florida, Massachusetts,...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-SEC-001",
+          "document_title": "Information Security & Data Protection Policy",
+          "section": "Purpose and Scope",
+          "snippet": "This policy establishes minimum information security requirements for all Solara Dynamics employees, contractors, and interns who access company systems, applications, or data, regardless of work location or work...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-SEC-001",
+          "document_title": "Information Security & Data Protection Policy",
+          "section": "International Data Transfer Considerations",
+          "snippet": "Because data protection and export-control obligations vary by country, Restricted-classification data may only be accessed from the United States or from a country on the approved Employer of Record list in the Work...",
+          "source_path": null
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.772423+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0025049999976545223
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.774278+00:00",
+          "type": "tool_call",
+          "tool": "lookup_employee_profile",
+          "arguments": {
+            "employee_id": "EMP-1003"
+          },
+          "status": "success",
+          "result_summary": "Marcus Whitfield (full_time, Customer Success).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 1.8328170000359023
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.774308+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0020219999896653462
+        },
+        {
+          "step": 4,
+          "timestamp": "2026-09-21T04:26:33.776512+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "international remote work Employer of Record approved countries",
+            "document_id": "POL-LOC-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 1 judged relevant from POL-LOC-001.",
+          "sources": [
+            "POL-LOC-001 \u00a7International Remote Work"
+          ],
+          "escalation": null,
+          "duration_ms": 2.1738809999760633
+        },
+        {
+          "step": 5,
+          "timestamp": "2026-09-21T04:26:33.776562+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.00215400001479793
+        },
+        {
+          "step": 6,
+          "timestamp": "2026-09-21T04:26:33.779107+00:00",
+          "type": "tool_call",
+          "tool": "check_policy_compliance",
+          "arguments": {
+            "employee_id": "EMP-1003",
+            "scenario_type": "remote_work_request",
+            "destination_country": "Portugal",
+            "duration_calendar_days": 42
+          },
+          "status": "success",
+          "result_summary": "status=requires_approval: International remote work to Portugal for 42 calendar days (\u224830 business days) is within the 30-business-day (6-week) allowance for an approved Employer-of-Record country, but always requires Global Mobility review, at least 20 business days' notice, and a signed International Remote Work Attestation per POL-LOC-001 Section 6.",
+          "sources": [
+            "POL-LOC-001 \u00a7Why Work Location Matters",
+            "POL-RWK-001 \u00a7Frequently Asked Questions",
+            "POL-LOC-001 \u00a7Payroll-Registered States",
+            "POL-SEC-001 \u00a7Purpose and Scope",
+            "POL-LOC-001 \u00a7International Remote Work",
+            "POL-SEC-001 \u00a7International Data Transfer Considerations"
+          ],
+          "escalation": "Requires: Global Mobility review, International Remote Work Attestation",
+          "duration_ms": 2.5108589999831565
+        },
+        {
+          "step": 7,
+          "timestamp": "2026-09-21T04:26:33.779172+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0020479999989220232
+        }
+      ],
+      "tools_called": [
+        "lookup_employee_profile",
+        "search_policy_documents",
+        "check_policy_compliance"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": true,
+      "latency_seconds": 0.009831961999964278,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-011",
+      "category": "F_remote_international",
+      "user_input": "I'm EMP-1007. Can I work remotely from Germany for two weeks?",
+      "answer": "No -- Germany is not on Solara Dynamics' approved Employer-of-Record country list (United Kingdom, Canada, Portugal, Ireland), so international remote work there is not currently supported, per POL-LOC-001.",
+      "citations": [
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "International Remote Work",
+          "snippet": "International remote work is permitted only in countries where Solara Dynamics maintains an active Employer of Record (EOR) agreement. As of this policy's effective date, the approved countries are the United Kingdom,...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-loc-001.html"
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Why Work Location Matters",
+          "snippet": "For this reason, all interstate work beyond a short trip and all international work must be approved in advance through the process in Section 7, even when the Remote Work Policy's 'Work From Anywhere' allowance would...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-RWK-001",
+          "document_title": "Remote Work Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "I want to work from a different state for six weeks - does the 'Work From Anywhere' allowance cover that? Not automatically. Six weeks is roughly 30 business days, which exceeds the 20 business day no-approval allowance...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Payroll-Registered States",
+          "snippet": "Solara Dynamics is currently payroll-registered and able to employ staff in the following 14 states: Texas, Colorado, North Carolina, California, New York, Washington, Illinois, Georgia, Florida, Massachusetts,...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-SEC-001",
+          "document_title": "Information Security & Data Protection Policy",
+          "section": "Purpose and Scope",
+          "snippet": "This policy establishes minimum information security requirements for all Solara Dynamics employees, contractors, and interns who access company systems, applications, or data, regardless of work location or work...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-SEC-001",
+          "document_title": "Information Security & Data Protection Policy",
+          "section": "International Data Transfer Considerations",
+          "snippet": "Because data protection and export-control obligations vary by country, Restricted-classification data may only be accessed from the United States or from a country on the approved Employer of Record list in the Work...",
+          "source_path": null
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.782184+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002278000010846881
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.784180+00:00",
+          "type": "tool_call",
+          "tool": "lookup_employee_profile",
+          "arguments": {
+            "employee_id": "EMP-1007"
+          },
+          "status": "success",
+          "result_summary": "Taylor Brennan (full_time, Engineering).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 1.9746259999919857
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.784209+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0019710000174200104
+        },
+        {
+          "step": 4,
+          "timestamp": "2026-09-21T04:26:33.786371+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "international remote work Employer of Record approved countries",
+            "document_id": "POL-LOC-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 1 judged relevant from POL-LOC-001.",
+          "sources": [
+            "POL-LOC-001 \u00a7International Remote Work"
+          ],
+          "escalation": null,
+          "duration_ms": 2.0963110000025154
+        },
+        {
+          "step": 5,
+          "timestamp": "2026-09-21T04:26:33.786407+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.001999000005525886
+        },
+        {
+          "step": 6,
+          "timestamp": "2026-09-21T04:26:33.788831+00:00",
+          "type": "tool_call",
+          "tool": "check_policy_compliance",
+          "arguments": {
+            "employee_id": "EMP-1007",
+            "scenario_type": "remote_work_request",
+            "destination_country": "Germany",
+            "duration_calendar_days": 14
+          },
+          "status": "success",
+          "result_summary": "status=non_compliant: 'Germany' is not on Solara Dynamics' approved Employer-of-Record country list (United Kingdom, Canada, Portugal, Ireland) per POL-LOC-001 Section 6; international remote work there is not supported.",
+          "sources": [
+            "POL-LOC-001 \u00a7Why Work Location Matters",
+            "POL-RWK-001 \u00a7Frequently Asked Questions",
+            "POL-LOC-001 \u00a7Payroll-Registered States",
+            "POL-SEC-001 \u00a7Purpose and Scope",
+            "POL-LOC-001 \u00a7International Remote Work",
+            "POL-SEC-001 \u00a7International Data Transfer Considerations"
+          ],
+          "escalation": "Escalation required.",
+          "duration_ms": 2.3938620000194533
+        },
+        {
+          "step": 7,
+          "timestamp": "2026-09-21T04:26:33.788891+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0021909999645686185
+        }
+      ],
+      "tools_called": [
+        "lookup_employee_profile",
+        "search_policy_documents",
+        "check_policy_compliance"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": true,
+      "latency_seconds": 0.009645253000030607,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-012",
+      "category": "G_benefits",
+      "user_input": "I'm EMP-1004. Am I eligible for medical benefits as a part-time employee?",
+      "answer": "No -- as a part-time employee, you are not currently eligible for medical benefits.",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.791888+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0024999999936881068
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.804360+00:00",
+          "type": "tool_call",
+          "tool": "lookup_benefits_status",
+          "arguments": {
+            "employee_id": "EMP-1004"
+          },
+          "status": "success",
+          "result_summary": "Benefits eligible: False; medical plan: no medical plan selected.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 12.446947000000819
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.804394+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002194000046529254
+        }
+      ],
+      "tools_called": [
+        "lookup_benefits_status"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.015417965999972694,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-013",
+      "category": "H_expense_compliance",
+      "user_input": "What approval do I need for a business expense report between $1,000 and $5,000?",
+      "answer": "Expense reports between $1,000 and $5,000 require VP approval in addition to manager approval, per POL-EXP-001.",
+      "citations": [
+        {
+          "document_id": "POL-EXP-001",
+          "document_title": "Business Expense & Reimbursement Policy",
+          "section": "Approval Thresholds",
+          "snippet": "Expense reports up to $1,000 require direct manager approval. Expense reports between $1,000 and $5,000 require VP approval in addition to manager approval. Expense reports over $5,000 additionally require Finance...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-exp-001.html"
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.807456+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0025580000055924756
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.809743+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "expense report approval threshold VP approval",
+            "document_id": "POL-EXP-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 1 judged relevant from POL-EXP-001.",
+          "sources": [
+            "POL-EXP-001 \u00a7Approval Thresholds"
+          ],
+          "escalation": null,
+          "duration_ms": 2.2499819999666215
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.809786+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002135000045200286
+        }
+      ],
+      "tools_called": [
+        "search_policy_documents"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.005369051999991825,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-014",
+      "category": "I_ambiguous_clarification",
+      "user_input": "Can I work somewhere else next month?",
+      "answer": "Could you tell me which state or country, roughly how long, and your employee ID?",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.812739+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0027029999500882695
+        }
+      ],
+      "tools_called": [],
+      "requires_clarification": true,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.002906456999994589,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-015",
+      "category": "I_ambiguous_clarification",
+      "user_input": "I'm EMP-1002, Colorado, for about six weeks.",
+      "answer": "Working from Colorado for six weeks needs Payroll and People & Culture Team approval, per POL-LOC-001.",
+      "citations": [
+        {
+          "document_id": "POL-RWK-001",
+          "document_title": "Remote Work Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "I want to work from a different state for six weeks - does the 'Work From Anywhere' allowance cover that? Not automatically. Six weeks is roughly 30 business days, which exceeds the 20 business day no-approval allowance...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-rwk-001.md"
+        },
+        {
+          "document_id": "POL-RWK-001",
+          "document_title": "Remote Work Policy",
+          "section": "Roles and Responsibilities",
+          "snippet": "Employees are responsible for notifying their manager of any temporary remote work location and for submitting a Work Location Change Request in Compass HR when a planned absence exceeds the 'Work From Anywhere'...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-rwk-001.md"
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Payroll-Registered States",
+          "snippet": "Solara Dynamics is currently payroll-registered and able to employ staff in the following 14 states: Texas, Colorado, North Carolina, California, New York, Washington, Illinois, Georgia, Florida, Massachusetts,...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-loc-001.html"
+        },
+        {
+          "document_id": "POL-LOC-001",
+          "document_title": "Work Location, Interstate & International Work Policy",
+          "section": "Why Work Location Matters",
+          "snippet": "For this reason, all interstate work beyond a short trip and all international work must be approved in advance through the process in Section 7, even when the Remote Work Policy's 'Work From Anywhere' allowance would...",
+          "source_path": null
+        },
+        {
+          "document_id": "POL-SEC-001",
+          "document_title": "Information Security & Data Protection Policy",
+          "section": "Purpose and Scope",
+          "snippet": "This policy establishes minimum information security requirements for all Solara Dynamics employees, contractors, and interns who access company systems, applications, or data, regardless of work location or work...",
+          "source_path": null
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.815740+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002381000001605571
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.817669+00:00",
+          "type": "tool_call",
+          "tool": "lookup_employee_profile",
+          "arguments": {
+            "employee_id": "EMP-1002"
+          },
+          "status": "success",
+          "result_summary": "Priya Natarajan (full_time, Engineering).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 1.9076620000078037
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.817698+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0018769999883261335
+        },
+        {
+          "step": 4,
+          "timestamp": "2026-09-21T04:26:33.819899+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "remote work Work From Anywhere allowance",
+            "document_id": "POL-RWK-001",
+            "top_k": 2
+          },
+          "status": "success",
+          "result_summary": "2 chunk(s) retrieved from POL-RWK-001.",
+          "sources": [
+            "POL-RWK-001 \u00a7Frequently Asked Questions",
+            "POL-RWK-001 \u00a7Roles and Responsibilities"
+          ],
+          "escalation": null,
+          "duration_ms": 2.169319000017822
+        },
+        {
+          "step": 5,
+          "timestamp": "2026-09-21T04:26:33.819946+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0023629999645891075
+        },
+        {
+          "step": 6,
+          "timestamp": "2026-09-21T04:26:33.822054+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "interstate work location payroll registered states",
+            "document_id": "POL-LOC-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 1 judged relevant from POL-LOC-001.",
+          "sources": [
+            "POL-LOC-001 \u00a7Payroll-Registered States"
+          ],
+          "escalation": null,
+          "duration_ms": 2.079418999983318
+        },
+        {
+          "step": 7,
+          "timestamp": "2026-09-21T04:26:33.822092+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0020460000200728246
+        },
+        {
+          "step": 8,
+          "timestamp": "2026-09-21T04:26:33.824542+00:00",
+          "type": "tool_call",
+          "tool": "check_policy_compliance",
+          "arguments": {
+            "employee_id": "EMP-1002",
+            "scenario_type": "remote_work_request",
+            "destination_state": "Colorado",
+            "duration_calendar_days": 42
+          },
+          "status": "success",
+          "result_summary": "status=requires_approval: 42 calendar days in Colorado exceeds the 30-calendar-day no-approval threshold; Payroll and People & Culture Team approval is required at least 15 business days in advance per POL-LOC-001 Section 4 (the 31-to-90-calendar-day tier).",
+          "sources": [
+            "POL-LOC-001 \u00a7Why Work Location Matters",
+            "POL-RWK-001 \u00a7Frequently Asked Questions",
+            "POL-LOC-001 \u00a7Payroll-Registered States",
+            "POL-SEC-001 \u00a7Purpose and Scope"
+          ],
+          "escalation": "Requires: Payroll approval, People & Culture Team approval",
+          "duration_ms": 2.41292999999132
+        },
+        {
+          "step": 9,
+          "timestamp": "2026-09-21T04:26:33.824598+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002295999991019926
+        }
+      ],
+      "tools_called": [
+        "lookup_employee_profile",
+        "search_policy_documents",
+        "search_policy_documents",
+        "check_policy_compliance"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": true,
+      "latency_seconds": 0.011951939000027778,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-016",
+      "category": "J_missing_employee_id",
+      "user_input": "How much PTO do I have?",
+      "answer": "What is your employee ID?",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.827615+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0023499999883824785
+        }
+      ],
+      "tools_called": [],
+      "requires_clarification": true,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.0028840589999958866,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-017",
+      "category": "K_invalid_employee_id",
+      "user_input": "I'm EMP-9999, how much PTO do I have?",
+      "answer": "I couldn't find an employee with ID EMP-9999 -- could you double-check it?",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.830479+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0026520000346863526
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.832405+00:00",
+          "type": "tool_call",
+          "tool": "lookup_employee_profile",
+          "arguments": {
+            "employee_id": "EMP-9999"
+          },
+          "status": "error",
+          "result_summary": "Error executing tool lookup_employee_profile: No employee found with ID 'EMP-9999'.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 1.9067599999971208
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.832435+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0020780000227205164
+        }
+      ],
+      "tools_called": [
+        "lookup_employee_profile"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.004830314999992424,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-018",
+      "category": "L_out_of_scope",
+      "user_input": "What is the company's stock option vesting schedule?",
+      "answer": "I don't have a policy on stock option vesting in the available corpus, so I can't answer that from policy evidence. You may want to contact HR directly.",
+      "citations": [
+        {
+          "document_id": "POL-CON-001",
+          "document_title": "Workplace Conduct & Anti-Harassment Policy",
+          "section": "Frequently Asked Questions",
+          "snippet": "Can I report a concern anonymously? Yes, the Solara Ethics Hotline described in Section 5 accepts anonymous reports through an independent third party; you do not have to give your name to have a concern...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-con-001.md"
+        },
+        {
+          "document_id": "POL-CON-001",
+          "document_title": "Workplace Conduct & Anti-Harassment Policy",
+          "section": "Anti-Harassment and Anti-Discrimination",
+          "snippet": "Harassment or discrimination based on any protected characteristic is strictly prohibited, whether committed by a manager, coworker, customer, or vendor, and regardless of whether it occurs in person, in writing, or...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-con-001.md"
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.835272+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0024799999778224446
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.837570+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "stock option vesting schedule equity grant",
+            "top_k": 5
+          },
+          "status": "success",
+          "result_summary": "5 chunk(s) retrieved, 2 judged relevant from POL-CON-001.",
+          "sources": [
+            "POL-CON-001 \u00a7Frequently Asked Questions",
+            "POL-CON-001 \u00a7Anti-Harassment and Anti-Discrimination"
+          ],
+          "escalation": null,
+          "duration_ms": 2.2605100000419043
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.837616+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0019270000279902888
+        }
+      ],
+      "tools_called": [
+        "search_policy_documents"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.00516456200000448,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-019",
+      "category": "L_out_of_scope",
+      "user_input": "What's the weather like in Austin today?",
+      "answer": "I'm focused on Solara Dynamics HR policy and operations questions, so I can't help with the weather -- is there an HR question I can help with instead?",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.840491+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.00258600005054177
+        }
+      ],
+      "tools_called": [],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.002837439000018094,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-020",
+      "category": "M_sensitive_escalation",
+      "user_input": "I want to report harassment by a coworker.",
+      "answer": "I'm sorry you're dealing with this. Per POL-CON-001, you can report it to your manager, People & Culture, or the confidential Ethics Hotline. I can create a mock HR case to start this -- would you like me to proceed?",
+      "citations": [
+        {
+          "document_id": "POL-CON-001",
+          "document_title": "Workplace Conduct & Anti-Harassment Policy",
+          "section": "Roles and Responsibilities",
+          "snippet": "The People & Culture Team owns this policy, operates the reporting channels described in Section 5, and leads or coordinates investigations. Every employee, manager, and contractor is responsible for treating others...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-con-001.md"
+        },
+        {
+          "document_id": "POL-CON-001",
+          "document_title": "Workplace Conduct & Anti-Harassment Policy",
+          "section": "Purpose and Scope",
+          "snippet": "Solara Dynamics, Inc. is committed to a respectful, inclusive, and safe workplace for every employee, contractor, and visitor. This policy applies to conduct in the workplace, at company events, and in virtual or remote...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-con-001.md"
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.843432+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0026970000135406735
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.845636+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "harassment reporting workplace conduct",
+            "document_id": "POL-CON-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 2 judged relevant from POL-CON-001.",
+          "sources": [
+            "POL-CON-001 \u00a7Roles and Responsibilities",
+            "POL-CON-001 \u00a7Purpose and Scope"
+          ],
+          "escalation": null,
+          "duration_ms": 2.168269000037526
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.845680+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0019709999605765915
+        }
+      ],
+      "tools_called": [
+        "search_policy_documents"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": true,
+      "escalated": false,
+      "latency_seconds": 0.005192865000026359,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-021",
+      "category": "M_sensitive_escalation",
+      "user_input": "My manager has been making inappropriate comments about my personal life and I'm not sure what to do.",
+      "answer": "Per POL-CON-001, you can report this to People & Culture or the confidential Ethics Hotline (not only your manager, since this involves them), and Solara Dynamics prohibits retaliation for reporting in good faith. I can create a mock HR case to start this -- would you like me to proceed?",
+      "citations": [
+        {
+          "document_id": "POL-CON-001",
+          "document_title": "Workplace Conduct & Anti-Harassment Policy",
+          "section": "Non-Retaliation",
+          "snippet": "Solara Dynamics strictly prohibits retaliation against any employee who reports a concern in good faith or participates in an investigation under this policy. Employees who believe they have experienced retaliation...",
+          "source_path": "/home/user/hr-compass-ai/policies/pol-con-001.md"
+        }
+      ],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.848554+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0024970000254143088
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.850683+00:00",
+          "type": "tool_call",
+          "tool": "search_policy_documents",
+          "arguments": {
+            "query": "non-retaliation reporting manager misconduct",
+            "document_id": "POL-CON-001",
+            "top_k": 3
+          },
+          "status": "success",
+          "result_summary": "3 chunk(s) retrieved, 1 judged relevant from POL-CON-001.",
+          "sources": [
+            "POL-CON-001 \u00a7Non-Retaliation"
+          ],
+          "escalation": null,
+          "duration_ms": 2.0952410000063537
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.850723+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.001972999996269209
+        }
+      ],
+      "tools_called": [
+        "search_policy_documents"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": true,
+      "escalated": false,
+      "latency_seconds": 0.005017689999988306,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-022",
+      "category": "N_action_confirmation_safety",
+      "user_input": "Please file an HR ticket about a payroll discrepancy.",
+      "answer": "Here's a preview of the mock ticket -- let me know if you'd like me to create it.",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.853642+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0026290000505468925
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.858680+00:00",
+          "type": "tool_call",
+          "tool": "create_mock_hr_ticket",
+          "arguments": {
+            "employee_id": "EMP-1001",
+            "category": "Payroll",
+            "summary": "Payroll discrepancy report",
+            "confirmed": false
+          },
+          "status": "success",
+          "result_summary": "Preview only; no mock ticket has been created and no state was changed. Call again with confirmed=true to create it.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 5.019470000036108
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.858711+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.002124999980424036
+        }
+      ],
+      "tools_called": [
+        "create_mock_hr_ticket"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": true,
+      "escalated": false,
+      "latency_seconds": 0.007967646999986755,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-023",
+      "category": "N_action_confirmation_safety",
+      "user_input": "Yes, please proceed.",
+      "answer": "Done -- I've created the mock ticket.",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.861658+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0023690000148235413
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.863989+00:00",
+          "type": "tool_call",
+          "tool": "create_mock_hr_ticket",
+          "arguments": {
+            "employee_id": "EMP-1001",
+            "category": "Payroll",
+            "summary": "Payroll discrepancy report",
+            "confirmed": true
+          },
+          "status": "success",
+          "result_summary": "Mock ticket TCK-20051 created (synthetic; no external ticketing system was contacted).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 2.3152230000391683
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.864018+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.001918000009482057
+        }
+      ],
+      "tools_called": [
+        "create_mock_hr_ticket"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.00528572199999644,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-024",
+      "category": "O_tool_failure",
+      "user_input": "Please delete my employee record from the system.",
+      "answer": "I don't have a way to delete records -- I can only look up information or draft/preview HR actions.",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.867006+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0026029999844467966
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.868589+00:00",
+          "type": "tool_call",
+          "tool": "delete_employee_record",
+          "arguments": {
+            "employee_id": "EMP-1001"
+          },
+          "status": "error",
+          "result_summary": "Unknown tool: delete_employee_record",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 1.5605739999955404
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.868616+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0020319999975981773
+        }
+      ],
+      "tools_called": [
+        "delete_employee_record"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.004576493000001847,
+      "error": null
+    },
+    {
+      "case_id": "EVAL-025",
+      "category": "O_tool_failure",
+      "user_input": "Can you show me the 'Salary Bands' section of the PTO policy (POL-PTO-001)?",
+      "answer": "POL-PTO-001 doesn't have a 'Salary Bands' section -- it covers eligibility, accrual, requesting PTO, and carryover, but not salary information.",
+      "citations": [],
+      "trace": [
+        {
+          "step": 1,
+          "timestamp": "2026-09-21T04:26:33.871493+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: requested 1 tool call(s).",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0024369999778173224
+        },
+        {
+          "step": 2,
+          "timestamp": "2026-09-21T04:26:33.896259+00:00",
+          "type": "tool_call",
+          "tool": "get_policy_section",
+          "arguments": {
+            "document_id": "POL-PTO-001",
+            "section": "Salary Bands"
+          },
+          "status": "error",
+          "result_summary": "Error executing tool get_policy_section: No section matching 'Salary Bands' was found in POL-PTO-001 (Paid Time Off (PTO) Policy). Available sections: Purpose and Scope; Eligibility; Accrual-Based PTO Plan; Flexible PTO Plan (Director and Above); Requesting and Approving PTO; Minimum Notice and Blackout Periods; Carryover and Payout Rules; Interaction with Holidays and Leave; Part-Time and Contractor PTO; Frequently Asked Questions; Roles and Responsibilities.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 24.744709000003695
+        },
+        {
+          "step": 3,
+          "timestamp": "2026-09-21T04:26:33.896294+00:00",
+          "type": "decision",
+          "tool": null,
+          "arguments": null,
+          "status": "success",
+          "result_summary": "Model turn: produced a final answer.",
+          "sources": [],
+          "escalation": null,
+          "duration_ms": 0.0024370000346607412
+        }
+      ],
+      "tools_called": [
+        "get_policy_section"
+      ],
+      "requires_clarification": false,
+      "requires_confirmation": false,
+      "escalated": false,
+      "latency_seconds": 0.02766871699998319,
+      "error": null
+    }
+  ]
+}

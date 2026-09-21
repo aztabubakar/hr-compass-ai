@@ -11,7 +11,7 @@ tests construct `llm.fake_provider.FakeLLMProvider` directly instead.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
@@ -27,15 +27,24 @@ def _env_float(name: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class LLMConfig:
-    provider: str = os.getenv("LLM_PROVIDER", "groq")
-    groq_api_key: str | None = os.getenv("GROQ_API_KEY") or None
-    groq_model: str | None = os.getenv("GROQ_MODEL") or None
-    gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or None
-    gemini_model: str | None = os.getenv("GEMINI_MODEL") or None
+    """Every field's default reads its environment variable via
+    `default_factory` -- i.e. at instantiation time -- rather than a plain
+    `= os.getenv(...)` expression, which Python would evaluate exactly once,
+    at class-definition (module-import) time. A plain expression would bake
+    in whatever the environment happened to be when `llm.config` was first
+    imported, so a later change (a test's `monkeypatch.setenv`/`delenv`, or
+    any process that sets these vars after import) would silently have no
+    effect on a fresh `LLMConfig()`."""
+
+    provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "groq"))
+    groq_api_key: str | None = field(default_factory=lambda: os.getenv("GROQ_API_KEY") or None)
+    groq_model: str | None = field(default_factory=lambda: os.getenv("GROQ_MODEL") or None)
+    gemini_api_key: str | None = field(default_factory=lambda: os.getenv("GEMINI_API_KEY") or None)
+    gemini_model: str | None = field(default_factory=lambda: os.getenv("GEMINI_MODEL") or None)
     # Low/near-deterministic by default: appropriate for HR policy answers,
     # where consistent, literal grounding matters more than creative variety.
-    temperature: float = _env_float("LLM_TEMPERATURE", 0.2)
-    timeout_seconds: float = _env_float("LLM_TIMEOUT_SECONDS", 30.0)
+    temperature: float = field(default_factory=lambda: _env_float("LLM_TEMPERATURE", 0.2))
+    timeout_seconds: float = field(default_factory=lambda: _env_float("LLM_TIMEOUT_SECONDS", 30.0))
 
 
 def is_llm_configured(config: LLMConfig | None = None) -> bool:
